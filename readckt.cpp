@@ -91,6 +91,9 @@ void clear(void);
 const char *gname(int );
 void levelizeNodes(void);
 void genNodeIndex(void);
+void processNodeQueue(void);
+void processNodeQueue(void);
+void simNode(int );
 /*----------------- Command definitions ----------------------------------*/
 #define NUMFUNCS 6
 void cread(char *);
@@ -123,6 +126,8 @@ std::vector<NSTRUC> PI_Nodes;
 std::vector<NSTRUC> PO_Nodes;
 std::vector<int> index2ref;
 std::vector<int> ref2index;
+std::vector<int> nodeQueue;
+int maxLevels;
 /*------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
@@ -189,18 +194,170 @@ void logicSim(char *cp)
 	}
 	
 	int nPI = 0; //  # of primary inputs found in input file
+	
+	NSTRUC *np;
+	
 	//  Cycle through the input file line-by-line
 	int tempPI, tempLogic;
 	while(fgets(buf, MAXLINE, fptr) != NULL) {
       if(sscanf(buf,"%d, %d", &tempPI, &tempLogic) == 2) {
-         //  Read  a valid line
-		 
-		 
+         //  Success, read a valid line
+		 //  Find the node for given PI
+		 np = &NodeV[ref2index[tempPI]];
+		 //  Check if this is actually a PI
+		 if(np->type!=IPT){
+			 printf("Node %d is not a PI\n",tempPI);
+			 fclose(fptr);
+			 return;
+		 }
+		 //  Update logic of PI
+		 np->logic = tempLogic;
+		 //  Add these PI's to the queue to simulate logic
+		 nodeQueue.push_back(tempPI);
       }
-   }
+	}
+	
+	//  Levelize Nodes
+	levelizeNodes();
+	
+	//  Create list of nodes to analyze
+	processNodeQueue();
+	
+	
 	
 	fclose(fptr);
 }
+void processNodeQueue(void){
+	NSTRUC *np;
+	
+	int curLevel = 0;
+	while (nodeQueue.size()>0){
+		for(int i=0;i<nodeQueue.size();i++){
+			np = &NodeV[ref2index[nodeQueue[i]]];
+			if(np->level<=curLevel){
+				simNode(np->ref);
+				nodeQueue.erase(nodeQueue.begin()+i);
+				for(int k = 0;k<np->fout;k++){
+					nodeQueue.push_back(np->downNodes[k]);
+				}
+			}
+		
+		}
+		curLevel++;
+		
+	}
+	
+}
+
+void simNode(int nodeRef){
+	NSTRUC *np;
+	int i;
+	std::vector<bool> inputs;
+	bool firstIn;
+	
+	np = &NodeV[ref2index[nodeRef]];
+	
+	if(np->type == IPT){
+		//  Nothing to do here, return
+		return;
+	}
+	if(np->fin==0){
+		//  Nothing to do, return;
+		return;
+	}
+	
+	//  Generate array of bool inputs
+	NSTRUC *inNode;
+	for(i=0;i<np->fin;i++){
+		inNode = &NodeV[ref2index[np->upNodes[i]]];
+		inputs.push_back(inNode->logic);
+	}
+	
+	
+	switch (np-> type){
+		case IPT:
+			//  Nothing to do here
+			break;
+		case BRCH:
+			//  Set all down-nodes to current logic
+			//for( i=0;i<np->fout;i++){
+			//	int downNodeRef = np->downNodes[i];
+			//	NodeV[ref2index[downNodeRef]].logic = np->logic;
+			//}
+			np->logic = inputs[0];
+			return;
+			break;
+		case XOR:
+			firstIn = inputs[0];
+			for(i = 0;i<inputs.size();i++){
+				if(inputs[i]!=firstIn){
+					np->logic = true;
+					return;
+				}
+			}
+			np->logic = false;
+			return;
+			break;
+		case OR:
+			for(i=0;i<inputs.size();i++){
+				if(inputs[i]==true){
+					np->logic = true;
+					return;
+				}
+			}
+			np->logic = false;
+			return;
+			break;
+		case AND:
+			for(i=0;i<inputs.size();i++){
+				if(inputs[i]==false){
+					np->logic = false;
+					return;
+				}
+			}
+			np->logic = true;
+			return;
+			break;
+		case NAND:
+			for(i=0;i<inputs.size();i++){
+				if(inputs[i]==false){
+					np->logic = true;
+					return;
+				}
+			}
+			np->logic = false;
+			return;
+			break;
+		case NOR:
+			for(i=0;i<inputs.size();i++){
+				if(inputs[i]==true){
+					np->logic = false;
+					return;
+				}
+			}
+			np->logic = true;
+			return;
+			break;
+		case NOT:
+			if(inputs[0]==true){
+				np->logic = false;
+			}else{
+				np->logic = true;
+			}
+			return;
+			break;
+		default:
+			printf("Node type %d not recognized\n",np->type);
+	}
+		
+		
+		
+		
+
+	
+}
+	
+
 
 
 /*-----------------------------------------------------------------------
@@ -226,7 +383,7 @@ void cread(char *cp)
 	char buf[MAXLINE];
 	int  i, j, k, nd, tp = 0;
 	FILE *fd;
-	NSTRUC *np;
+	
 	
 	std::vector<NSTRUC>::iterator nodeIter;
 
@@ -366,12 +523,13 @@ void pc(char *cp)
 	std::vector<NSTRUC>::iterator np;
 
    
-	printf(" Node   Type \tIn     \t\t\tOut    \n");
+	printf(" Node   Type \tIn     \t\t\tOut     \t\t\tLogic\n");
 	printf("------ ------\t-------\t\t\t-------\n");
 	for(np=NodeV.begin();np!=NodeV.end();np++) {
       
 		printf("\t\t\t\t\t");
 		for(j = 0; j<np->fout; j++) printf("%d ",np->downNodes[j]);
+		printf("\t\t %d", np->logic);
 		printf("\r%5d  %s\t", np->ref, gname(np->type));
 		for(j = 0; j<np->fin; j++) printf("%d ",np->upNodes[j]);
 		printf("\n");
@@ -451,6 +609,9 @@ void levelizeNodes(void)
 		//  If no new levels were applied, you are either done or stuck 
 		if (noAction) break;
 	}
+	
+
+	
 }
 
 
