@@ -52,9 +52,12 @@ lev()
 }
 =======================================================================*/
 
-#include <stdio.h>
+
+#include <cstdio>
 #include <ctype.h>
 #include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
 
 #define MAXLINE 81               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
@@ -62,14 +65,14 @@ lev()
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
 #define Lowcase(x) ((isalpha(x) && isupper(x))? tolower(x) : (x))
 
-enum e_com {READ, PC, HELP, QUIT, LEV};
+//enum e_com {READ, PC, HELP, QUIT, LEV};
 enum e_state {EXEC, CKTLD};         /* Gstate values */
 enum e_ntype {GATE, PI, FB, PO};    /* column 1 of circuit format */
 enum e_gtype {IPT, BRCH, XOR, OR, NOR, NOT, NAND, AND};  /* gate types */
 
 struct cmdstruc {
    char name[MAXNAME];        /* command syntax */
-   int (*fptr)();             /* function pointer of the commands */
+   void (*fptr)(char *);             /* function pointer of the commands */
    enum e_state state;        /* execution state sequence */
 };
 
@@ -84,9 +87,20 @@ typedef struct n_struc {
    int level;                 /* level of the gate output */
 } NSTRUC;                     
 
+/*----------------  Function Declaration -----------------*/
+void allocate(void);
+void clear(void);
+char *gname(int );
+void levelize(NSTRUC *, int , int *) ;
+void levprint(int *);
 /*----------------- Command definitions ----------------------------------*/
 #define NUMFUNCS 5
-int cread(), pc(), help(), quit(), lev();
+//int cread(), pc(), help(), quit(), lev();
+void cread(char *);
+void pc(char *);
+void help(char *);
+void quit(char *);
+void lev(char *);
 struct cmdstruc command[NUMFUNCS] = {
    {"READ", cread, EXEC},
    {"PC", pc, CKTLD},
@@ -105,7 +119,7 @@ int Npi;                        /* number of primary inputs */
 int Npo;                        /* number of primary outputs */
 int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
-int Ngates;
+char curFile[MAXNAME];			/* Name of current parsed file */
 /*------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
@@ -125,7 +139,8 @@ description:
 -----------------------------------------------------------------------*/
 main()
 {
-   enum e_com com;
+   //enum e_com com;
+   uint8_t com;
    char cline[MAXLINE], wstr[MAXLINE], *cp;
 
    while(!Done) {
@@ -138,7 +153,8 @@ main()
 	cp++;
       }
       cp = cline + strlen(wstr);
-      com = READ;
+      //com = READ;
+	  com = 0;
       while(com < NUMFUNCS && strcmp(wstr, command[com].name)) com++;
       if(com < NUMFUNCS) {
          if(command[com].state <= Gstate) (*command[com].fptr)(cp);
@@ -166,8 +182,10 @@ description:
   set up the circuit information. These procedures may be simplified in
   the future.
 -----------------------------------------------------------------------*/
-cread(cp)
-char *cp;
+//cread(cp)
+//char *cp;
+
+void cread(char *cp)
 {
    char buf[MAXLINE];
    int ntbl, *tbl, i, j, k, nd, tp, fo, fi, ni = 0, no = 0;
@@ -179,20 +197,12 @@ char *cp;
       printf("File %s does not exist!\n", buf);
       return;
    }
-
-   // Split off circuit name
-   char *cname, *lastExt;
-   cname = malloc(strlen(buf) + 1);
-   strcpy(cname, buf);
-   lastExt = strrchr(cname, '.');
-   *lastExt = '\0';
-   lastExt = strrchr(cname, '/');
-   cname = lastExt + sizeof(char);
-   circuitName = malloc(strlen(cname)+1);
-   strcpy(circuitName, cname);
+	
+	//  Enter filename into global filename variable
+	strcpy(curFile, buf);
 
    if(Gstate >= CKTLD) clear();
-   Nnodes = Npi = Npo = ntbl = Ngates = 0;
+   Nnodes = Npi = Npo = ntbl  = 0;
    while(fgets(buf, MAXLINE, fd) != NULL) {
       if(sscanf(buf,"%d %d", &tp, &nd) == 2) {
          if(ntbl < nd) ntbl = nd;
@@ -214,9 +224,9 @@ char *cp;
    while(fscanf(fd, "%d %d", &tp, &nd) != EOF) {
       np = &Node[tbl[nd]];
       np->num = nd;
+	  np->level = -1;//  Default level; -1 means not evaluated
       if(tp == PI) Pinput[ni++] = np;
       else if(tp == PO) Poutput[no++] = np;
-      if (tp == GATE || tp == PO) Ngates++;
       switch(tp) {
          case PI:
          case PO:
@@ -261,12 +271,13 @@ called by: main
 description:
   The routine prints out the circuit description from previous READ command.
 -----------------------------------------------------------------------*/
-pc(cp)
-char *cp;
+//pc(cp)
+//char *cp;
+void pc(char *cp)
 {
    int i, j;
    NSTRUC *np;
-   char *gname();
+   //char *gname();
    
    printf(" Node   Type \tIn     \t\t\tOut    \n");
    printf("------ ------\t-------\t\t\t-------\n");
@@ -289,67 +300,143 @@ char *cp;
    printf("Number of primary outputs = %d\n", Npo);
 }
 
-/*-----------------------------------------------------------------------
- * levelization
- */
-lev()
+
+/*---------------- Levelization ------------------------------------------
+input: string for name of file to be written
+output: void
+called by: main
+description:
+  Levelize the nodes in the circuit.  PI is 0
+-----------------------------------------------------------------------*/
+int getLevel(int nodeRef){
+	//  Quick function to return the level of a specified node
+	int k;
+	NSTRUC *tNode;
+	for(k=0;k<Nnodes;k++){
+		tNode = &Node[k];
+		if(tNode->num ==  nodeRef){
+			//  Found the node!  Return
+			return tNode->level;
+		}
+	}	
+	//  Node not found; return default -1;
+	return -1;
+}
+
+void lev(char *cp)
 {
-   int i;
-   int levels[Nnodes];
-   for(i = 0; i < Nnodes; i++) {
-      levels[i] = -1;
-   }
-
-   for(i = 0; i < Npi; i++) {
-      levelize(Pinput[i], 0, levels);
-   }
-   levprint(levels);
-
-   printf("== Levelization Complete ==\n");
-}
-
-levelize(NSTRUC *curr_node, int curr_level, int *levels) {
-   int idx = curr_node->indx;
+	int i, j, k;
+	NSTRUC *np;
    
-   if (levels[idx] != -1) {
-      if (levels[idx] < curr_level) {
-         levels[idx] = curr_level;
-      } else {
-         return;
-      }
-   }
-
-   levels[idx] = curr_level;
-
-   int i;
-   for (i = 0; i < curr_node->fout; i++) {
-      levelize(curr_node->dnodes[i], curr_level + 1, levels);
-   }
+	//  Code to get name of circuit from file-name
+	//  Example:  Converts "./circuits/c17.ckt" to "c17"
+	char *strPtr;
+    while(1)
+    {
+        strPtr= strchr(curFile,'/');
+        if((strPtr!=NULL) && (strPtr<(curFile+MAXNAME-2))){
+			//  Trim to everything after the '/' character
+            strcpy(curFile, strPtr+1);
+        }else{
+			//  '/' character not found; all done
+            break;
+        }
+    }
+    strPtr = strstr(curFile,".ckt");
+    if((strPtr!=NULL)&&(strPtr>curFile)){
+		//  if the ".ckt" string is found,
+		//  set its location to null to mark end of string
+        *strPtr = 0;
+    }
+	
+	//  Get the # of gates
+	int nGates = 0;
+	for (i=0;i<Nnodes;i++){
+		np = &Node[i];
+		//  It is a gate if the type is 2 or greater
+		if (np->type>1)nGates++;
+	}
+	
+	
+	//  Levelization algorithm	
+	int noAction;  //  Indicator to see if any levels are applied
+	while(1){
+		noAction = 1;
+		for (i=0;i<Nnodes;i++){
+			np = &Node[i];
+			//  Check to see if level is applied
+			if(np->level<0){
+				//  No level applied yet
+				//  See if level can be applied
+				if(np->type == 0){
+					// Easy; this is a primary input so assign "0"
+					np->level = 0;//  New level applied!
+					noAction = 0;
+				}else{
+					//  Check to see if all of the inputs are levelized yet
+					int maxLevel = 0;
+					for(j = 0; j<np->fin; j++){
+						int nLevel = getLevel(np->unodes[j]->num);
+						if (nLevel<0){
+							//  1 input not levelized yet; no need to continue
+							break;
+						}else{
+							maxLevel = (maxLevel>nLevel) ? maxLevel : nLevel;
+						}
+					}
+					//  Current level is the maximum of the input levels +1
+					np->level = maxLevel+1;
+					noAction = 0;//  New level applied!
+				}
+			}
+		}
+		//  See if any new levels were applied.  
+		//  If no new levels were applied, you are either done or stuck 
+		if (noAction) break;
+	}
+	
+	/*
+	//  Debug Print to Console
+	printf("%s\n", curFile);
+	printf("#PI: %d\n#PO: %d\n",Npi, Npo);
+	printf("#Nodes: %d\n#Gates: %d\n",Nnodes, nGates);
+	for(i=0;i<Nnodes;i++){
+		np = &Node[i];
+		printf("%d %d\n",np->num, np->level);
+	}
+	*/
+	
+	
+	
+	//  Write File
+	FILE *fptr;
+	char buf[MAXLINE];
+	sscanf(cp, "%s", buf);
+	if((fptr = fopen(buf,"w")) == NULL) {
+		printf("File %s cannot be written!\n", buf);
+		return;
+	}else{
+		printf("==> Writing file: %s\n",buf);
+	}
+	//  Begin writing file
+	fprintf(fptr,"%s\n", curFile);
+	fprintf(fptr,"#PI: %d\n#PO: %d\n",Npi, Npo);
+	fprintf(fptr,"#Nodes: %d\n#Gates: %d\n",Nnodes, nGates);
+	for(i=0;i<Nnodes;i++){
+		np = &Node[i];
+		
+		fprintf(fptr,"%d %d\n",np->num, np->level);
+		
+	}
+	//  Done writing file
+	fclose(fptr);;
+	
+	//  Print OK to console
+	printf("==> OK\n");
+	
 }
 
-levprint(int *levels){
-   FILE *out_file;
-   char *out_filename;
 
-   out_filename = malloc(strlen(circuitName) + 5*sizeof(char));
-   strcpy(out_filename, circuitName);
-   strcat(out_filename, ".txt");
-
-   out_file = fopen(out_filename, "w");
-
-   fprintf(out_file, "%s\n", circuitName);
-   fprintf(out_file, "#PI: %d\n", Npi);
-   fprintf(out_file, "#PO: %d\n", Npo);
-   fprintf(out_file, "#Nodes: %d\n", Nnodes);
-   fprintf(out_file, "#Gates: %d\n", Ngates);
-
-   int i;
-   for (i = 0; i < Nnodes; i++) {
-      fprintf(out_file, "%d %d \n", Node[i].num, levels[i]);
-   }
-
-   fclose(out_file);
-}
 
 /*-----------------------------------------------------------------------
 input: nothing
@@ -358,7 +445,7 @@ called by: main
 description:
   The routine prints ot help inormation for each command.
 -----------------------------------------------------------------------*/
-help()
+void help(char*)
 {
    printf("READ filename - ");
    printf("read in circuit file and creat all data structures\n");
@@ -377,7 +464,7 @@ called by: main
 description:
   Set Done to 1 which will terminates the program.
 -----------------------------------------------------------------------*/
-quit()
+void quit(char*)
 {
    Done = 1;
 }
@@ -393,7 +480,7 @@ description:
   before reading in new one. It frees up the dynamic arrays Node.unodes,
   Node.dnodes, Node.flist, Node, Pinput, Poutput, and Tap.
 -----------------------------------------------------------------------*/
-clear()
+void clear(void)
 {
    int i;
 
@@ -417,7 +504,7 @@ description:
   Node.flist, Node, Pinput, Poutput, and Tap. It also set the default
   tap selection and the fanin and fanout to 0.
 -----------------------------------------------------------------------*/
-allocate()
+void allocate(void)
 {
    int i;
 
@@ -438,8 +525,9 @@ description:
   The routine receive an integer gate type and return the gate type in
   character string.
 -----------------------------------------------------------------------*/
-char *gname(tp)
-int tp;
+//char *gname(tp)
+//int tp;
+char *gname(int tp)
 {
    switch(tp) {
       case 0: return("PI");
