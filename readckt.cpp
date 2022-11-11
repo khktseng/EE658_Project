@@ -58,6 +58,7 @@ lev()
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <vector>
 
 #define MAXLINE 81               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
@@ -84,6 +85,8 @@ typedef struct n_struc {
    unsigned fout;             /* number of fanouts */
    struct n_struc **unodes;   /* pointer to array of up nodes */
    struct n_struc **dnodes;   /* pointer to array of down nodes */
+   std::vector<struct n_struc *> unodesV;
+   std::vector<struct n_struc *> dnodesV;
    int level;                 /* level of the gate output */
 } NSTRUC;                     
 
@@ -91,25 +94,26 @@ typedef struct n_struc {
 void allocate(void);
 void clear(void);
 const char *gname(int );
-void levelize(NSTRUC *, int , int *) ;
-void levprint(int *);
+void levelizeNodes(void);
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 5
+#define NUMFUNCS 6
 //int cread(), pc(), help(), quit(), lev();
 void cread(char *);
 void pc(char *);
 void help(char *);
 void quit(char *);
 void lev(char *);
+void logicSim(char *);
 struct cmdstruc command[NUMFUNCS] = {
-   {"READ", cread, EXEC},
-   {"PC", pc, CKTLD},
-   {"HELP", help, EXEC},
-   {"QUIT", quit, EXEC},
-   {"LEV", lev, CKTLD},
+	{"READ", cread, EXEC},
+	{"PC", pc, CKTLD},
+	{"HELP", help, EXEC},
+	{"QUIT", quit, EXEC},
+	{"LEV", lev, CKTLD},
+	{"LOGICSIM", logicSim, CKTLD},
 };
 
-/*------------------------------------------------------------------------*/
+/*----------------Global Variables-----------------------------------------*/
 enum e_state Gstate = EXEC;     /* global exectution sequence */
 NSTRUC *Node;                   /* dynamic array of nodes */
 NSTRUC **Pinput;                /* pointer to array of primary inputs */
@@ -164,6 +168,28 @@ main()
    }
 }
 
+
+
+void logicSim(char *cp)
+{
+	//  Read File
+	FILE *fptr;
+	char readFile[MAXLINE];
+	char writeFile[MAXLINE];
+	sscanf(cp, "%s %s", readFile, writeFile);
+	
+	//Debug //////////
+	printf("Read: %s, Write: %s;\n", readFile, writeFile);
+	////////////////
+	
+	if((fptr = fopen(readFile,"r")) == NULL) {
+		printf("File %s cannot be read!\n", readFile);
+		return;
+	}
+	fclose(fptr);
+}
+
+
 /*-----------------------------------------------------------------------
 input: circuit description file name
 output: nothing
@@ -182,9 +208,6 @@ description:
   set up the circuit information. These procedures may be simplified in
   the future.
 -----------------------------------------------------------------------*/
-//cread(cp)
-//char *cp;
-
 void cread(char *cp)
 {
    char buf[MAXLINE];
@@ -263,7 +286,6 @@ void cread(char *cp)
    Gstate = CKTLD;
    printf("==> OK\n");
 }
-
 /*-----------------------------------------------------------------------
 input: nothing
 output: nothing
@@ -271,8 +293,7 @@ called by: main
 description:
   The routine prints out the circuit description from previous READ command.
 -----------------------------------------------------------------------*/
-//pc(cp)
-//char *cp;
+
 void pc(char *cp)
 {
    int i, j;
@@ -323,41 +344,9 @@ int getLevel(int nodeRef){
 	return -1;
 }
 
-void lev(char *cp)
+void levelizeNodes(void)
 {
-	int i, j, k;
-	NSTRUC *np;
-   
-	//  Code to get name of circuit from file-name
-	//  Example:  Converts "./circuits/c17.ckt" to "c17"
-	char *strPtr;
-    while(1)
-    {
-        strPtr= strchr(curFile,'/');
-        if((strPtr!=NULL) && (strPtr<(curFile+MAXNAME-2))){
-			//  Trim to everything after the '/' character
-            strcpy(curFile, strPtr+1);
-        }else{
-			//  '/' character not found; all done
-            break;
-        }
-    }
-    strPtr = strstr(curFile,".ckt");
-    if((strPtr!=NULL)&&(strPtr>curFile)){
-		//  if the ".ckt" string is found,
-		//  set its location to null to mark end of string
-        *strPtr = 0;
-    }
-	
-	//  Get the # of gates
-	int nGates = 0;
-	for (i=0;i<Nnodes;i++){
-		np = &Node[i];
-		//  It is a gate if the type is 2 or greater
-		if (np->type>1)nGates++;
-	}
-	
-	
+		
 	//  Levelization algorithm	
 	int noAction;  //  Indicator to see if any levels are applied
 	while(1){
@@ -394,7 +383,45 @@ void lev(char *cp)
 		//  If no new levels were applied, you are either done or stuck 
 		if (noAction) break;
 	}
+}
+
+
+void lev(char *cp)
+{
+	int i, j, k;
+	NSTRUC *np;
+   
+	//  Code to get name of circuit from file-name
+	//  Example:  Converts "./circuits/c17.ckt" to "c17"
+	char *strPtr;
+    while(1)
+    {
+        strPtr= strchr(curFile,'/');
+        if((strPtr!=NULL) && (strPtr<(curFile+MAXNAME-2))){
+			//  Trim to everything after the '/' character
+            strcpy(curFile, strPtr+1);
+        }else{
+			//  '/' character not found; all done
+            break;
+        }
+    }
+    strPtr = strstr(curFile,".ckt");
+    if((strPtr!=NULL)&&(strPtr>curFile)){
+		//  if the ".ckt" string is found,
+		//  set its location to null to mark end of string
+        *strPtr = 0;
+    }
 	
+	//  Get the # of gates
+	int nGates = 0;
+	for (i=0;i<Nnodes;i++){
+		np = &Node[i];
+		//  It is a gate if the type is 2 or greater
+		if (np->type>1)nGates++;
+	}
+	
+	
+	levelizeNodes();
 	/*
 	//  Debug Print to Console
 	printf("%s\n", curFile);
@@ -405,7 +432,6 @@ void lev(char *cp)
 		printf("%d %d\n",np->num, np->level);
 	}
 	*/
-	
 	
 	
 	//  Write File
