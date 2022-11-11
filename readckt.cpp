@@ -90,7 +90,7 @@ typedef struct n_struc {
 /*----------------  Function Declaration -----------------*/
 void allocate(void);
 void clear(void);
-char *gname(int );
+const char *gname(int );
 void levelize(NSTRUC *, int , int *) ;
 void levprint(int *);
 /*----------------- Command definitions ----------------------------------*/
@@ -527,7 +527,7 @@ description:
 -----------------------------------------------------------------------*/
 //char *gname(tp)
 //int tp;
-char *gname(int tp)
+const char *gname(int tp)
 {
    switch(tp) {
       case 0: return("PI");
