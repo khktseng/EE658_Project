@@ -31,27 +31,6 @@
 
 =======================================================================*/
 
-/*=======================================================================
-  - Write your program as a subroutine under main().
-    The following is an example to add another command 'lev' under main()
-
-enum e_com {READ, PC, HELP, QUIT, LEV};
-#define NUMFUNCS 5
-int cread(), pc(), quit(), lev();
-struct cmdstruc command[NUMFUNCS] = {
-   {"READ", cread, EXEC},
-   {"PC", pc, CKTLD},
-   {"HELP", help, EXEC},
-   {"QUIT", quit, EXEC},
-   {"LEV", lev, CKTLD},
-};
-
-lev()
-{
-   ...
-}
-=======================================================================*/
-
 
 #include <cstdio>
 #include <ctype.h>
@@ -60,16 +39,33 @@ lev()
 #include <stdint.h>
 #include <vector>
 
+using namespace std;
+
 #define MAXLINE 81               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
 
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
 #define Lowcase(x) ((isalpha(x) && isupper(x))? tolower(x) : (x))
 
-//enum e_com {READ, PC, HELP, QUIT, LEV};
 enum e_state {EXEC, CKTLD};         /* Gstate values */
-enum e_ntype {GATE, PI, FB, PO};    /* column 1 of circuit format */
-enum e_gtype {IPT, BRCH, XOR, OR, NOR, NOT, NAND, AND};  /* gate types */
+/* Node Type, column 1 of circuit format */
+enum e_ntype {
+	GATE = 0, 
+	PI = 1, 
+	FB = 2, 
+	PO = 3,
+};    
+//  gate types, Column 3 of circuit format	
+enum e_gtype {
+	IPT = 0, 
+	BRCH = 1, 
+	XOR = 2, 
+	OR = 3, 
+	NOR = 4, 
+	NOT = 5, 
+	NAND = 6, 
+	AND = 7,
+};  
 
 struct cmdstruc {
    char name[MAXNAME];        /* command syntax */
@@ -79,15 +75,14 @@ struct cmdstruc {
 
 typedef struct n_struc {
    unsigned indx;             /* node index(from 0 to NumOfLine - 1 */
-   unsigned num;              /* line number(May be different from indx */
+   unsigned ref;              /* line number(May be different from indx */
    enum e_gtype type;         /* gate type */
    unsigned fin;              /* number of fanins */
    unsigned fout;             /* number of fanouts */
-   struct n_struc **unodes;   /* pointer to array of up nodes */
-   struct n_struc **dnodes;   /* pointer to array of down nodes */
-   std::vector<struct n_struc *> unodesV;
-   std::vector<struct n_struc *> dnodesV;
+   std::vector<int> upNodes;
+   std::vector<int> downNodes;
    int level;                 /* level of the gate output */
+   bool logic;
 } NSTRUC;                     
 
 /*----------------  Function Declaration -----------------*/
@@ -95,15 +90,16 @@ void allocate(void);
 void clear(void);
 const char *gname(int );
 void levelizeNodes(void);
+void genNodeIndex(void);
 /*----------------- Command definitions ----------------------------------*/
 #define NUMFUNCS 6
-//int cread(), pc(), help(), quit(), lev();
 void cread(char *);
 void pc(char *);
 void help(char *);
 void quit(char *);
 void lev(char *);
 void logicSim(char *);
+void logicInit(void);
 struct cmdstruc command[NUMFUNCS] = {
 	{"READ", cread, EXEC},
 	{"PC", pc, CKTLD},
@@ -115,15 +111,18 @@ struct cmdstruc command[NUMFUNCS] = {
 
 /*----------------Global Variables-----------------------------------------*/
 enum e_state Gstate = EXEC;     /* global exectution sequence */
-NSTRUC *Node;                   /* dynamic array of nodes */
-NSTRUC **Pinput;                /* pointer to array of primary inputs */
-NSTRUC **Poutput;               /* pointer to array of primary outputs */
 int Nnodes;                     /* number of nodes */
 int Npi;                        /* number of primary inputs */
 int Npo;                        /* number of primary outputs */
+int Ngates;
 int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
 char curFile[MAXNAME];			/* Name of current parsed file */
+std::vector<NSTRUC> NodeV;
+std::vector<NSTRUC> PI_Nodes;
+std::vector<NSTRUC> PO_Nodes;
+std::vector<int> index2ref;
+std::vector<int> ref2index;
 /*------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
@@ -143,7 +142,6 @@ description:
 -----------------------------------------------------------------------*/
 main()
 {
-   //enum e_com com;
    uint8_t com;
    char cline[MAXLINE], wstr[MAXLINE], *cp;
 
@@ -172,20 +170,35 @@ main()
 
 void logicSim(char *cp)
 {
+	
 	//  Read File
 	FILE *fptr;
 	char readFile[MAXLINE];
 	char writeFile[MAXLINE];
+	char buf[MAXLINE];
 	sscanf(cp, "%s %s", readFile, writeFile);
 	
 	//Debug //////////
 	printf("Read: %s, Write: %s;\n", readFile, writeFile);
 	////////////////
 	
+	//  First open the file of primary inputs
 	if((fptr = fopen(readFile,"r")) == NULL) {
 		printf("File %s cannot be read!\n", readFile);
 		return;
 	}
+	
+	int nPI = 0; //  # of primary inputs found in input file
+	//  Cycle through the input file line-by-line
+	int tempPI, tempLogic;
+	while(fgets(buf, MAXLINE, fptr) != NULL) {
+      if(sscanf(buf,"%d, %d", &tempPI, &tempLogic) == 2) {
+         //  Read  a valid line
+		 
+		 
+      }
+   }
+	
 	fclose(fptr);
 }
 
@@ -210,82 +223,134 @@ description:
 -----------------------------------------------------------------------*/
 void cread(char *cp)
 {
-   char buf[MAXLINE];
-   int ntbl, *tbl, i, j, k, nd, tp, fo, fi, ni = 0, no = 0;
-   FILE *fd;
-   NSTRUC *np;
+	char buf[MAXLINE];
+	int  i, j, k, nd, tp = 0;
+	FILE *fd;
+	NSTRUC *np;
+	
+	std::vector<NSTRUC>::iterator nodeIter;
 
-   sscanf(cp, "%s", buf);
-   if((fd = fopen(buf,"r")) == NULL) {
-      printf("File %s does not exist!\n", buf);
-      return;
-   }
+	sscanf(cp, "%s", buf);
+	if((fd = fopen(buf,"r")) == NULL) {
+		printf("File %s does not exist!\n", buf);
+		return;
+	}
 	
 	//  Enter filename into global filename variable
 	strcpy(curFile, buf);
 
-   if(Gstate >= CKTLD) clear();
-   Nnodes = Npi = Npo = ntbl  = 0;
-   while(fgets(buf, MAXLINE, fd) != NULL) {
-      if(sscanf(buf,"%d %d", &tp, &nd) == 2) {
-         if(ntbl < nd) ntbl = nd;
-         Nnodes ++;
-         if(tp == PI) Npi++;
-         else if(tp == PO) Npo++;
-      }
-   }
-   tbl = (int *) malloc(++ntbl * sizeof(int));
+	if(Gstate >= CKTLD) clear();
+	
+	
+	Nnodes = Npi = Npo   = Ngates =0;
+	fseek(fd, 0L, 0);
+	int index=0;
+	while(fscanf(fd, "%d %d", &tp, &nd) != EOF) {
+		NSTRUC tempNode;
+		tempNode.ref = nd;
+		tempNode.level = -1;
+		tempNode.logic = true;
+		tempNode.indx = index++;
+		
+		//  Keep track of the number of gates
+		if (tp>1){
+			//  This is a gate
+			
+		}
+		Nnodes ++;
+		
+		if(tp==PI){
+			PI_Nodes.push_back(tempNode);
+			Npi++;
+		}else if (tp==PO){
+			PO_Nodes.push_back(tempNode);
+			Npo++;
+		}
+		
+		switch(tp) {
+			case PI:
 
-   fseek(fd, 0L, 0);
-   i = 0;
-   while(fgets(buf, MAXLINE, fd) != NULL) {
-      if(sscanf(buf,"%d %d", &tp, &nd) == 2) tbl[nd] = i++;
-   }
-   allocate();
+			case PO:
 
-   fseek(fd, 0L, 0);
-   while(fscanf(fd, "%d %d", &tp, &nd) != EOF) {
-      np = &Node[tbl[nd]];
-      np->num = nd;
-	  np->level = -1;//  Default level; -1 means not evaluated
-      if(tp == PI) Pinput[ni++] = np;
-      else if(tp == PO) Poutput[no++] = np;
-      switch(tp) {
-         case PI:
-         case PO:
-         case GATE:
-            fscanf(fd, "%d %d %d", &np->type, &np->fout, &np->fin);
-            break;
-         
-         case FB:
-            np->fout = np->fin = 1;
-            fscanf(fd, "%d", &np->type);
-            break;
+			case GATE:
+				fscanf(fd, "%d %d %d", &tempNode.type, &tempNode.fout, &tempNode.fin);
+				if(tempNode.type>1){
+					Ngates++;
+				}
+				break;
+				
+			case FB:
+				tempNode.fout = tempNode.fin = 1;
+				fscanf(fd, "%d", &tempNode.type);
+				break;
 
-         default:
-            printf("Unknown node type!\n");
-            exit(-1);
-         }
-      np->unodes = (NSTRUC **) malloc(np->fin * sizeof(NSTRUC *));
-      np->dnodes = (NSTRUC **) malloc(np->fout * sizeof(NSTRUC *));
-      for(i = 0; i < np->fin; i++) {
-         fscanf(fd, "%d", &nd);
-         np->unodes[i] = &Node[tbl[nd]];
-         }
-      for(i = 0; i < np->fout; np->dnodes[i++] = NULL);
-      }
-   for(i = 0; i < Nnodes; i++) {
-      for(j = 0; j < Node[i].fin; j++) {
-         np = Node[i].unodes[j];
-         k = 0;
-         while(np->dnodes[k] != NULL) k++;
-         np->dnodes[k] = &Node[i];
-         }
-      }
-   fclose(fd);
-   Gstate = CKTLD;
-   printf("==> OK\n");
+			default:
+				printf("Unknown node type!\n");
+				exit(-1);
+        }
+
+		for(i=0;i<tempNode.fin;i++){
+			fscanf(fd, "%d", &nd);
+			tempNode.upNodes.push_back( nd);
+		}
+		NodeV.push_back(tempNode);
+    }
+	//  Done processing through file
+	fclose(fd);
+	
+	genNodeIndex();
+	
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		for(j=0;j<nodeIter->fin;j++){
+			int ref = nodeIter->upNodes[j];
+			NodeV[ref2index[ref]].downNodes.push_back(nodeIter->ref);
+			
+		}
+		
+	}
+	
+   
+	
+	Gstate = CKTLD;
+	printf("==> OK\n");
 }
+
+void genNodeIndex(void){
+	//  Regenerates reference vectors of the global NodeV vector
+	// 	index2ref supplies the reference # for a given index
+	//  ref2index supplies the index for a given reference #
+	
+	std::vector<NSTRUC>::iterator nodeIter;
+	int i;
+	
+	//  Clear vectors first
+	index2ref.clear();
+	ref2index.clear();
+	
+	
+	//  Create the index2ref array
+	//  Also find the maximum value of the reference #
+	int maxRef = 0;
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		index2ref.push_back(nodeIter->ref);
+		if(nodeIter->ref>maxRef){
+			maxRef = nodeIter->ref;
+		}
+	}
+	
+	//  Create the ref2index array
+	//  First initialize with 0;
+	for(i=0;i<=maxRef;i++){
+		ref2index.push_back(0);
+	}
+	//  Now enter the reference numbers
+	i = 0;
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		ref2index[nodeIter->ref] = i++;
+	}
+
+}
+
 /*-----------------------------------------------------------------------
 input: nothing
 output: nothing
@@ -296,29 +361,36 @@ description:
 
 void pc(char *cp)
 {
-   int i, j;
-   NSTRUC *np;
-   //char *gname();
+	int i, j;
    
-   printf(" Node   Type \tIn     \t\t\tOut    \n");
-   printf("------ ------\t-------\t\t\t-------\n");
-   for(i = 0; i<Nnodes; i++) {
-      np = &Node[i];
-      printf("\t\t\t\t\t");
-      for(j = 0; j<np->fout; j++) printf("%d ",np->dnodes[j]->num);
-      printf("\r%5d  %s\t", np->num, gname(np->type));
-      for(j = 0; j<np->fin; j++) printf("%d ",np->unodes[j]->num);
-      printf("\n");
-   }
-   printf("Primary inputs:  ");
-   for(i = 0; i<Npi; i++) printf("%d ",Pinput[i]->num);
-   printf("\n");
-   printf("Primary outputs: ");
-   for(i = 0; i<Npo; i++) printf("%d ",Poutput[i]->num);
-   printf("\n\n");
-   printf("Number of nodes = %d\n", Nnodes);
-   printf("Number of primary inputs = %d\n", Npi);
-   printf("Number of primary outputs = %d\n", Npo);
+	std::vector<NSTRUC>::iterator np;
+
+   
+	printf(" Node   Type \tIn     \t\t\tOut    \n");
+	printf("------ ------\t-------\t\t\t-------\n");
+	for(np=NodeV.begin();np!=NodeV.end();np++) {
+      
+		printf("\t\t\t\t\t");
+		for(j = 0; j<np->fout; j++) printf("%d ",np->downNodes[j]);
+		printf("\r%5d  %s\t", np->ref, gname(np->type));
+		for(j = 0; j<np->fin; j++) printf("%d ",np->upNodes[j]);
+		printf("\n");
+	}
+   
+	printf("Primary inputs:  ");
+    for(np=PI_Nodes.begin();np!=PI_Nodes.end();np++) {
+		printf("%d ",np->ref);
+	}
+	printf("\n");
+	printf("Primary outputs: ");
+	for(np=PO_Nodes.begin();np!=PO_Nodes.end();np++) {
+		printf("%d ",np->ref);
+	}
+	printf("\n\n");
+	printf("Number of nodes = %d\n", Nnodes);
+	printf("Number of primary inputs = %d\n", Npi);
+	printf("Number of primary outputs = %d\n", Npo);
+   
 }
 
 
@@ -331,28 +403,24 @@ description:
 -----------------------------------------------------------------------*/
 int getLevel(int nodeRef){
 	//  Quick function to return the level of a specified node
-	int k;
-	NSTRUC *tNode;
-	for(k=0;k<Nnodes;k++){
-		tNode = &Node[k];
-		if(tNode->num ==  nodeRef){
-			//  Found the node!  Return
-			return tNode->level;
-		}
-	}	
-	//  Node not found; return default -1;
-	return -1;
+	
+	NSTRUC *nodePtr;
+	nodePtr = &NodeV[ref2index[nodeRef]];
+
+	return nodePtr->level;
 }
 
 void levelizeNodes(void)
 {
-		
+	//NSTRUC *np;
+	
+	std::vector<NSTRUC>::iterator np;
+	
 	//  Levelization algorithm	
 	int noAction;  //  Indicator to see if any levels are applied
 	while(1){
 		noAction = 1;
-		for (i=0;i<Nnodes;i++){
-			np = &Node[i];
+		for(np=NodeV.begin();np!=NodeV.end();++np){
 			//  Check to see if level is applied
 			if(np->level<0){
 				//  No level applied yet
@@ -364,8 +432,8 @@ void levelizeNodes(void)
 				}else{
 					//  Check to see if all of the inputs are levelized yet
 					int maxLevel = 0;
-					for(j = 0; j<np->fin; j++){
-						int nLevel = getLevel(np->unodes[j]->num);
+					for(int j = 0; j<np->fin; j++){
+						int nLevel = getLevel(np->upNodes[j]);
 						if (nLevel<0){
 							//  1 input not levelized yet; no need to continue
 							break;
@@ -389,7 +457,8 @@ void levelizeNodes(void)
 void lev(char *cp)
 {
 	int i, j, k;
-	NSTRUC *np;
+	//NSTRUC *np;
+	std::vector<NSTRUC>::iterator np;
    
 	//  Code to get name of circuit from file-name
 	//  Example:  Converts "./circuits/c17.ckt" to "c17"
@@ -411,14 +480,6 @@ void lev(char *cp)
 		//  set its location to null to mark end of string
         *strPtr = 0;
     }
-	
-	//  Get the # of gates
-	int nGates = 0;
-	for (i=0;i<Nnodes;i++){
-		np = &Node[i];
-		//  It is a gate if the type is 2 or greater
-		if (np->type>1)nGates++;
-	}
 	
 	
 	levelizeNodes();
@@ -447,12 +508,9 @@ void lev(char *cp)
 	//  Begin writing file
 	fprintf(fptr,"%s\n", curFile);
 	fprintf(fptr,"#PI: %d\n#PO: %d\n",Npi, Npo);
-	fprintf(fptr,"#Nodes: %d\n#Gates: %d\n",Nnodes, nGates);
-	for(i=0;i<Nnodes;i++){
-		np = &Node[i];
-		
-		fprintf(fptr,"%d %d\n",np->num, np->level);
-		
+	fprintf(fptr,"#Nodes: %d\n#Gates: %d\n",Nnodes, Ngates);
+	for(np=NodeV.begin();np!=NodeV.end();np++){		
+		fprintf(fptr,"%d %d\n",np->ref, np->level);
 	}
 	//  Done writing file
 	fclose(fptr);;
@@ -508,40 +566,17 @@ description:
 -----------------------------------------------------------------------*/
 void clear(void)
 {
-   int i;
 
-   for(i = 0; i<Nnodes; i++) {
-      free(Node[i].unodes);
-      free(Node[i].dnodes);
-   }
-   free(Node);
-   free(Pinput);
-   free(Poutput);
+   
+   NodeV.clear();
+   Nnodes = 0;
+   Npi = 0;
+   Npo = 0;
+   index2ref.clear();
+   ref2index.clear();
    Gstate = EXEC;
 }
 
-/*-----------------------------------------------------------------------
-input: nothing
-output: nothing
-called by: cread
-description:
-  This routine allocatess the memory space required by the circuit
-  description data structure. It allocates the dynamic arrays Node,
-  Node.flist, Node, Pinput, Poutput, and Tap. It also set the default
-  tap selection and the fanin and fanout to 0.
------------------------------------------------------------------------*/
-void allocate(void)
-{
-   int i;
-
-   Node = (NSTRUC *) malloc(Nnodes * sizeof(NSTRUC));
-   Pinput = (NSTRUC **) malloc(Npi * sizeof(NSTRUC *));
-   Poutput = (NSTRUC **) malloc(Npo * sizeof(NSTRUC *));
-   for(i = 0; i<Nnodes; i++) {
-      Node[i].indx = i;
-      Node[i].fin = Node[i].fout = 0;
-   }
-}
 
 /*-----------------------------------------------------------------------
 input: gate type
