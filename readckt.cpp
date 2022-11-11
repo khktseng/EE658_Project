@@ -216,33 +216,47 @@ void logicSim(char *cp)
 		 nodeQueue.push_back(tempPI);
       }
 	}
+	//  Done with input file; close it out
+	fclose(fptr);
+	
 	
 	//  Levelize Nodes
 	levelizeNodes();
 	
-	//  Create list of nodes to analyze
+	//  Simulate logic
 	processNodeQueue();
 	
+	//  Print Confirmation
+	printf("==> OK\n");
 	
-	
-	fclose(fptr);
 }
 void processNodeQueue(void){
+	//  Function to process all of the nodes in the queue
+	//  Need to determine current logic of these nodes based on the inputs
+	//  Assumes levelization has already occurred.
 	NSTRUC *np;
 	
+	//  Start at level 0, work up
 	int curLevel = 0;
 	while (nodeQueue.size()>0){
 		for(int i=0;i<nodeQueue.size();i++){
+			//  Get pointer to current node in queue.
 			np = &NodeV[ref2index[nodeQueue[i]]];
+			//  Check if level is low enough to proceed
 			if(np->level<=curLevel){
+				//  Logic simulation of this node
 				simNode(np->ref);
-				nodeQueue.erase(nodeQueue.begin()+i);
+				//  Now add all downstream nodes to the queue
 				for(int k = 0;k<np->fout;k++){
 					nodeQueue.push_back(np->downNodes[k]);
 				}
+				//  Done; remove this node
+				nodeQueue.erase(nodeQueue.begin()+i);
+				
 			}
 		
 		}
+		//  Move to next level
 		curLevel++;
 		
 	}
@@ -250,18 +264,24 @@ void processNodeQueue(void){
 }
 
 void simNode(int nodeRef){
+	//  Function to determine current logic of this node
+	//  based on logic of upstream nodes.
 	NSTRUC *np;
 	int i;
 	std::vector<bool> inputs;
 	bool firstIn;
 	
+	//  Get pointer to current node
 	np = &NodeV[ref2index[nodeRef]];
 	
 	if(np->type == IPT){
+		//  Input; logic already set
 		//  Nothing to do here, return
 		return;
 	}
+	
 	if(np->fin==0){
+		//  No upstream nodes
 		//  Nothing to do, return;
 		return;
 	}
@@ -279,15 +299,13 @@ void simNode(int nodeRef){
 			//  Nothing to do here
 			break;
 		case BRCH:
-			//  Set all down-nodes to current logic
-			//for( i=0;i<np->fout;i++){
-			//	int downNodeRef = np->downNodes[i];
-			//	NodeV[ref2index[downNodeRef]].logic = np->logic;
-			//}
+			//  Set equal to the input
 			np->logic = inputs[0];
 			return;
 			break;
 		case XOR:
+			//  If any inputs are different than the first one
+			//  then true can be returned.
 			firstIn = inputs[0];
 			for(i = 0;i<inputs.size();i++){
 				if(inputs[i]!=firstIn){
@@ -298,17 +316,8 @@ void simNode(int nodeRef){
 			np->logic = false;
 			return;
 			break;
-		case OR:
-			for(i=0;i<inputs.size();i++){
-				if(inputs[i]==true){
-					np->logic = true;
-					return;
-				}
-			}
-			np->logic = false;
-			return;
-			break;
 		case AND:
+			//  If any inputs are false, return false
 			for(i=0;i<inputs.size();i++){
 				if(inputs[i]==false){
 					np->logic = false;
@@ -319,6 +328,7 @@ void simNode(int nodeRef){
 			return;
 			break;
 		case NAND:
+			//  If any inputs are false, return true
 			for(i=0;i<inputs.size();i++){
 				if(inputs[i]==false){
 					np->logic = true;
@@ -328,7 +338,19 @@ void simNode(int nodeRef){
 			np->logic = false;
 			return;
 			break;
+		case OR:
+			//  If any inputs are true, return true
+			for(i=0;i<inputs.size();i++){
+				if(inputs[i]==true){
+					np->logic = true;
+					return;
+				}
+			}
+			np->logic = false;
+			return;
+			break;
 		case NOR:
+			//  If any inputs are true, return false;
 			for(i=0;i<inputs.size();i++){
 				if(inputs[i]==true){
 					np->logic = false;
@@ -339,6 +361,7 @@ void simNode(int nodeRef){
 			return;
 			break;
 		case NOT:
+			//  Return the inverse of the input
 			if(inputs[0]==true){
 				np->logic = false;
 			}else{
@@ -350,10 +373,6 @@ void simNode(int nodeRef){
 			printf("Node type %d not recognized\n",np->type);
 	}
 		
-		
-		
-		
-
 	
 }
 	
@@ -523,13 +542,13 @@ void pc(char *cp)
 	std::vector<NSTRUC>::iterator np;
 
    
-	printf(" Node   Type \tIn     \t\t\tOut     \t\t\tLogic\n");
+	printf(" Node   Type \tIn     \t\t\tOut     \t\tLogic\n");
 	printf("------ ------\t-------\t\t\t-------\n");
 	for(np=NodeV.begin();np!=NodeV.end();np++) {
       
 		printf("\t\t\t\t\t");
 		for(j = 0; j<np->fout; j++) printf("%d ",np->downNodes[j]);
-		printf("\t\t %d", np->logic);
+		printf("\t\t\t %d", np->logic);
 		printf("\r%5d  %s\t", np->ref, gname(np->type));
 		for(j = 0; j<np->fin; j++) printf("%d ",np->upNodes[j]);
 		printf("\n");
