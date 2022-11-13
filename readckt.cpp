@@ -145,7 +145,7 @@ description:
   Pointers to functions are used to make function calls which makes the
   code short and clean.
 -----------------------------------------------------------------------*/
-main()
+int main()
 {
    uint8_t com;
    char cline[MAXLINE], wstr[MAXLINE], *cp;
@@ -175,7 +175,8 @@ main()
 
 void logicSim(char *cp)
 {
-	
+	std::vector<NSTRUC>::iterator printnode, outitr;
+
 	//  Read File
 	FILE *fptr;
 	char readFile[MAXLINE];
@@ -222,12 +223,33 @@ void logicSim(char *cp)
 	
 	//  Levelize Nodes
 	levelizeNodes();
+
 	
 	//  Simulate logic
 	processNodeQueue();
+
+	
 	
 	//  Print Confirmation
 	printf("==> OK\n");
+
+	// Write to output file
+    outitr = PO_Nodes.begin();
+	if((fptr = fopen(writeFile,"w")) == NULL) {
+		printf("File %s cannot be read!\n", readFile);
+		return;
+	}
+    for(printnode=NodeV.begin();printnode!=NodeV.end();printnode++) 
+	{
+		if(outitr->indx == printnode->indx){
+			fprintf(fptr,"%d, %d \n",printnode->ref,printnode->logic);
+			if(outitr!=PO_Nodes.end()){
+				outitr++;
+			}
+		}
+		
+	}
+   fclose(fptr);
 	
 }
 void processNodeQueue(void){
@@ -547,10 +569,12 @@ void pc(char *cp)
 	for(np=NodeV.begin();np!=NodeV.end();np++) {
       
 		printf("\t\t\t\t\t");
-		for(j = 0; j<np->fout; j++) printf("%d ",np->downNodes[j]);
+		for(j = 0; j<np->fout; j++) 
+			printf("%d ",np->downNodes[j]);
 		printf("\t\t\t %d", np->logic);
 		printf("\r%5d  %s\t", np->ref, gname(np->type));
-		for(j = 0; j<np->fin; j++) printf("%d ",np->upNodes[j]);
+		for(j = 0; j<np->fin; j++) 
+			printf("%d ",np->upNodes[j]);
 		printf("\n");
 	}
    
