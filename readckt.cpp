@@ -49,14 +49,14 @@ using namespace std;
 
 enum e_state {EXEC, CKTLD};         /* Gstate values */
 /* Node Type, column 1 of circuit format */
-enum e_ntype {
+enum e_nodeType {
 	GATE = 0, 
 	PI = 1, 
 	FB = 2, 
 	PO = 3,
 };    
 //  gate types, Column 3 of circuit format	
-enum e_gtype {
+enum e_gateType {
 	IPT = 0, 
 	BRCH = 1, 
 	XOR = 2, 
@@ -76,7 +76,8 @@ struct cmdstruc {
 typedef struct n_struc {
    unsigned indx;             /* node index(from 0 to NumOfLine - 1 */
    unsigned ref;              /* line number(May be different from indx */
-   enum e_gtype type;         /* gate type */
+   enum e_gateType gateType;         /* gate type */
+   enum e_nodeType nodeType;         /* gate type */
    unsigned fin;              /* number of fanins */
    unsigned fout;             /* number of fanouts */
    std::vector<int> upNodes;
@@ -175,7 +176,7 @@ int main()
 
 void logicSim(char *cp)
 {
-	std::vector<NSTRUC>::iterator printnode, outitr;
+	std::vector<NSTRUC>::iterator printnode;
 
 	//  Read File
 	FILE *fptr;
@@ -206,7 +207,7 @@ void logicSim(char *cp)
 		 //  Find the node for given PI
 		 np = &NodeV[ref2index[tempPI]];
 		 //  Check if this is actually a PI
-		 if(np->type!=IPT){
+		 if(np->nodeType!=PI){
 			 printf("Node %d is not a PI\n",tempPI);
 			 fclose(fptr);
 			 return;
@@ -234,18 +235,17 @@ void logicSim(char *cp)
 	printf("==> OK\n");
 
 	// Write to output file
-    outitr = PO_Nodes.begin();
 	if((fptr = fopen(writeFile,"w")) == NULL) {
-		printf("File %s cannot be read!\n", readFile);
+		printf("File %s cannot be written!\n", writeFile);
 		return;
 	}
     for(printnode=NodeV.begin();printnode!=NodeV.end();printnode++) 
 	{
-		if(outitr->indx == printnode->indx){
+		if(printnode->nodeType == PO){
 			fprintf(fptr,"%d, %d \n",printnode->ref,printnode->logic);
-			if(outitr!=PO_Nodes.end()){
-				outitr++;
-			}
+			///if(outitr!=PO_Nodes.end()){
+			//	outitr++;
+			//}
 		}
 		
 	}
@@ -296,7 +296,7 @@ void simNode(int nodeRef){
 	//  Get pointer to current node
 	np = &NodeV[ref2index[nodeRef]];
 	
-	if(np->type == IPT){
+	if(np->gateType == IPT){
 		//  Input; logic already set
 		//  Nothing to do here, return
 		return;
@@ -316,7 +316,7 @@ void simNode(int nodeRef){
 	}
 	
 	
-	switch (np-> type){
+	switch (np-> gateType){
 		case IPT:
 			//  Nothing to do here
 			break;
@@ -392,7 +392,7 @@ void simNode(int nodeRef){
 			return;
 			break;
 		default:
-			printf("Node type %d not recognized\n",np->type);
+			printf("Node type %d not recognized\n",np->gateType);
 	}
 		
 	
@@ -422,8 +422,10 @@ description:
 void cread(char *cp)
 {
 	char buf[MAXLINE];
-	int  i, j, k, nd, tp = 0;
+	int  i, j, k, ref, tp = 0;
 	FILE *fd;
+	enum e_nodeType nodeType;
+	enum e_gateType gateType;
 	
 	
 	std::vector<NSTRUC>::iterator nodeIter;
@@ -443,43 +445,44 @@ void cread(char *cp)
 	Nnodes = Npi = Npo   = Ngates =0;
 	fseek(fd, 0L, 0);
 	int index=0;
-	while(fscanf(fd, "%d %d", &tp, &nd) != EOF) {
+	while(fscanf(fd, "%d %d", &nodeType, &ref) != EOF) {
 		NSTRUC tempNode;
-		tempNode.ref = nd;
+		tempNode.ref = ref;
 		tempNode.level = -1;
 		tempNode.logic = true;
 		tempNode.indx = index++;
+		tempNode.nodeType = nodeType;
 		
 		//  Keep track of the number of gates
-		if (tp>1){
+		if (nodeType>1){
 			//  This is a gate
 			
 		}
 		Nnodes ++;
 		
-		if(tp==PI){
+		if(nodeType==PI){
 			PI_Nodes.push_back(tempNode);
 			Npi++;
-		}else if (tp==PO){
+		}else if (nodeType==PO){
 			PO_Nodes.push_back(tempNode);
 			Npo++;
 		}
 		
-		switch(tp) {
+		switch(nodeType) {
 			case PI:
 
 			case PO:
 
 			case GATE:
-				fscanf(fd, "%d %d %d", &tempNode.type, &tempNode.fout, &tempNode.fin);
-				if(tempNode.type>1){
+				fscanf(fd, "%d %d %d", &tempNode.gateType, &tempNode.fout, &tempNode.fin);
+				if(tempNode.gateType>1){
 					Ngates++;
 				}
 				break;
 				
 			case FB:
 				tempNode.fout = tempNode.fin = 1;
-				fscanf(fd, "%d", &tempNode.type);
+				fscanf(fd, "%d", &tempNode.gateType);
 				break;
 
 			default:
@@ -488,8 +491,8 @@ void cread(char *cp)
         }
 
 		for(i=0;i<tempNode.fin;i++){
-			fscanf(fd, "%d", &nd);
-			tempNode.upNodes.push_back( nd);
+			fscanf(fd, "%d", &ref);
+			tempNode.upNodes.push_back( ref);
 		}
 		NodeV.push_back(tempNode);
     }
@@ -572,7 +575,7 @@ void pc(char *cp)
 		for(j = 0; j<np->fout; j++) 
 			printf("%d ",np->downNodes[j]);
 		printf("\t\t\t %d", np->logic);
-		printf("\r%5d  %s\t", np->ref, gname(np->type));
+		printf("\r%5d  %s\t", np->ref, gname(np->gateType));
 		for(j = 0; j<np->fin; j++) 
 			printf("%d ",np->upNodes[j]);
 		printf("\n");
@@ -626,25 +629,30 @@ void levelizeNodes(void)
 			if(np->level<0){
 				//  No level applied yet
 				//  See if level can be applied
-				if(np->type == 0){
+				if(np->nodeType == PI){
 					// Easy; this is a primary input so assign "0"
 					np->level = 0;//  New level applied!
 					noAction = 0;
 				}else{
 					//  Check to see if all of the inputs are levelized yet
-					int maxLevel = 0;
+					int maxLevel = -1;
 					for(int j = 0; j<np->fin; j++){
-						int nLevel = getLevel(np->upNodes[j]);
-						if (nLevel<0){
+						int upLevel = getLevel(np->upNodes[j]);
+						if (upLevel<0){
 							//  1 input not levelized yet; no need to continue
+							maxLevel = -1; //  To indicate failure to find level
 							break;
 						}else{
-							maxLevel = (maxLevel>nLevel) ? maxLevel : nLevel;
+							maxLevel = (maxLevel>upLevel) ? maxLevel : upLevel;
 						}
 					}
-					//  Current level is the maximum of the input levels +1
-					np->level = maxLevel+1;
-					noAction = 0;//  New level applied!
+					//  If valid, update level
+					if(maxLevel>=0){
+						//  Current level is the maximum of the input levels +1
+						np->level = maxLevel+1;
+						noAction = 0;//  New level applied!
+					}
+					
 				}
 			}
 		}
@@ -773,6 +781,8 @@ void clear(void)
 
    
    NodeV.clear();
+   PI_Nodes.clear();
+   PO_Nodes.clear();
    Nnodes = 0;
    Npi = 0;
    Npo = 0;
