@@ -1,5 +1,5 @@
 /*=======================================================================
-  A simple parser for "self" format
+Circuit Simulator and ATPG
 
   The circuit format (called "self" format) is based on outputs of
   a ISCAS 85 format translator written by Dr. Sandeep Gupta.
@@ -26,8 +26,12 @@
 
 
 
-                                    Author: Chihang Chen
-                                    Date: 9/16/94
+                                    Authors: 
+										Chihang Chen
+										Kousthubh Dixit
+										Kyle Tseng
+										Kris Fausnight
+                                    Date: Nov 22, 2022
 
 =======================================================================*/
 
@@ -38,11 +42,17 @@
 #include <string.h>
 #include <stdint.h>
 #include <vector>
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
 
 #define MAXLINE 81               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
+#define NBITS	32				/*  bits per paralell logic integer */
 
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
 #define Lowcase(x) ((isalpha(x) && isupper(x))? tolower(x) : (x))
@@ -65,7 +75,9 @@ enum e_gateType {
 	NOT = 5, 
 	NAND = 6, 
 	AND = 7,
+	XNOR = 8,
 };  
+
 
 struct cmdstruc {
    char name[MAXNAME];        /* command syntax */
@@ -80,30 +92,36 @@ typedef struct n_struc {
    enum e_nodeType nodeType;         /* gate type */
    unsigned fin;              /* number of fanins */
    unsigned fout;             /* number of fanouts */
-   std::vector<int> upNodes;
-   std::vector<int> downNodes;
+   vector<int> upNodes;
+   vector<int> downNodes;
    int level;                 /* level of the gate output */
-   bool logic;
+   //bool logic;
+   uint32_t logic3[3]; //  for 5-state logic; 0, 1, X, D, Dbar
 } NSTRUC;                     
 
 /*----------------  Function Declaration -----------------*/
 void allocate(void);
 void clear(void);
 const char *gname(int );
+const char *nname(int );
 void levelizeNodes(void);
 void genNodeIndex(void);
 void processNodeQueue(void);
-void processNodeQueue(void);
-void simNode(int );
+void addNodeToQueue(int );
+void logicInit(void);
+char getLogic(int , int);
+bool simNode3(int);
+void printTestPatterns(void);
+void setPatterns(int, int);
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 6
+#define NUMFUNCS 7
 void cread(char *);
 void pc(char *);
 void help(char *);
 void quit(char *);
 void lev(char *);
 void logicSim(char *);
-void logicInit(void);
+void printNode(char *);
 struct cmdstruc command[NUMFUNCS] = {
 	{"READ", cread, EXEC},
 	{"PC", pc, CKTLD},
@@ -111,6 +129,7 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"QUIT", quit, EXEC},
 	{"LEV", lev, CKTLD},
 	{"LOGICSIM", logicSim, CKTLD},
+	{"PRINTNODE", printNode, CKTLD},
 };
 
 /*----------------Global Variables-----------------------------------------*/
@@ -122,13 +141,17 @@ int Ngates;
 int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
 char curFile[MAXNAME];			/* Name of current parsed file */
-std::vector<NSTRUC> NodeV;
-std::vector<NSTRUC> PI_Nodes;
-std::vector<NSTRUC> PO_Nodes;
-std::vector<int> index2ref;
-std::vector<int> ref2index;
-std::vector<int> nodeQueue;
+vector<NSTRUC> NodeV;
+vector<int> PI_Nodes;
+vector<int> PO_Nodes;
+vector<int> ref2index;
+vector< pair<int,int> > nodeQueue; //  First->level, second->node reference
 int maxLevels;
+
+//  Paralell Test Patterns, scratchpad
+vector<int> PI_list;
+vector<vector<char> > testPatterns;
+
 /*------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------
@@ -173,13 +196,37 @@ int main()
 }
 
 
-
+/*--------logicSim--------------------------------------------------------
+input: "input file", "output file"
+output: nothing
+called by: shell
+description:
+	This function performs a parallel logic simulation on the currently loaded circuit.
+	Assumption is that levelization has already been done.
+	Input file ascii file, example:
+	1,2,3,6,7
+	1,1,0,0,1
+	1,1,1,1,1
+	0,0,0,0,0
+	1,0,1,0,1
+	0,1,0,1,0
+	1,1,0,0,1
+	1,0,1,1,0
+	The header row is the reference # of the PI
+	Each row is a different test pattern, logic corresponding 
+	to the PI of the first row.
+  
+-----------------------------------------------------------------------*/
 void logicSim(char *cp)
 {
-	std::vector<NSTRUC>::iterator printnode;
-
-	//  Read File
-	FILE *fptr;
+	// Perform a logic simulation
+	//  Some counters and temp variables
+	int temp, j,k;
+	char foo;
+	vector<char> tempPattern;
+		
+	//  Read File	
+	//  Input in form "fileToRead.txt fileToWrite.txt"
 	char readFile[MAXLINE];
 	char writeFile[MAXLINE];
 	char buf[MAXLINE];
@@ -189,215 +236,416 @@ void logicSim(char *cp)
 	printf("Read: %s, Write: %s;\n", readFile, writeFile);
 	////////////////
 	
-	//  First open the file of primary inputs
-	if((fptr = fopen(readFile,"r")) == NULL) {
+	//  First open the file of primary inputs	
+	fstream fptrIn;
+	string lineStr;
+	fptrIn.open(readFile, ios::in);
+	if(!fptrIn.is_open()){
 		printf("File %s cannot be read!\n", readFile);
 		return;
 	}
-	
-	int nPI = 0; //  # of primary inputs found in input file
-	
-	NSTRUC *np;
-	
-	//  Cycle through the input file line-by-line
-	int tempPI, tempLogic;
-	while(fgets(buf, MAXLINE, fptr) != NULL) {
-      if(sscanf(buf,"%d, %d", &tempPI, &tempLogic) == 2) {
-         //  Success, read a valid line
-		 //  Find the node for given PI
-		 np = &NodeV[ref2index[tempPI]];
-		 //  Check if this is actually a PI
-		 if(np->nodeType!=PI){
-			 printf("Node %d is not a PI\n",tempPI);
-			 fclose(fptr);
-			 return;
-		 }
-		 //  Update logic of PI
-		 np->logic = tempLogic;
-		 //  Add these PI's to the queue to simulate logic
-		 nodeQueue.push_back(tempPI);
-      }
+	PI_list.clear();//  Clear list of PI's
+	testPatterns.clear();//  Clear loaded test patterns
+	bool firstLine = true;
+	while(getline(fptrIn, lineStr)){
+		if(firstLine){
+			// First line is list of PI's
+			stringstream ss(lineStr);
+			while(ss>>temp){ //  Convert ascii to integer
+				//  Add this PI reference to the list
+				PI_list.push_back(temp);
+				ss>>foo;//  remove comma
+			}
+			firstLine = false;
+		}else{
+			// Subsequent lines are test patterns
+			tempPattern.clear();// pattern instance
+			int i = 0;
+			while(i<lineStr.size()){
+				tempPattern.push_back(lineStr[i]);
+				i=i+2;//  skip the comma
+			}
+			//  Add new pattern to vector of patterns
+			testPatterns.push_back(tempPattern);			
+		}
 	}
-	//  Done with input file; close it out
-	fclose(fptr);
+	fptrIn.close();
 	
+	//// --- Debug -------------
+	printTestPatterns();
+	// --------------------------
 	
-	//  Levelize Nodes
-	levelizeNodes();
-
+	//  Data Quality Check /////////////////////////////////////////
+	//  Check that inputs are valid
+	for(j=0;j<PI_list.size();j++){
+		//  Check that PI reference does not exceed length of node vector
+		if(PI_list[j]>(ref2index.size()-1)){
+			printf("\nWarning, input file %s contains inputs exceeding range\n", readFile);
+			return;
+		}
+		//  Check that node is actually a PI
+		if(NodeV[ref2index[PI_list[j]]].nodeType != PI){
+			printf("\nWarning, input file %s contains inputs that are not PI\n", readFile);
+			return;
+		}
+	}
+	for(k=0;k<testPatterns.size();k++){
+		//  Check that each test pattern size is equal to the PI list size
+		if(testPatterns[k].size()!=PI_list.size()){
+			printf("\nWarning, input file %s test pattern size does not match PI size",readFile);
+			return;
+		}
+	}
+	/////////////////////////////////////////////////////////
 	
-	//  Simulate logic
-	processNodeQueue();
-
-	
-	
-	//  Print Confirmation
-	printf("==> OK\n");
-
-	// Write to output file
-	if((fptr = fopen(writeFile,"w")) == NULL) {
+	//  Open output text file
+	//  This must be done early since each pass writes an output
+	FILE *fptrOut;
+	if((fptrOut = fopen(writeFile,"w")) == NULL) {
 		printf("File %s cannot be written!\n", writeFile);
 		return;
+	}else{
+		printf("==> Writing file: %s\n",writeFile);
 	}
-    for(printnode=NodeV.begin();printnode!=NodeV.end();printnode++) 
-	{
-		if(printnode->nodeType == PO){
-			fprintf(fptr,"%d, %d \n",printnode->ref,printnode->logic);
-			///if(outitr!=PO_Nodes.end()){
-			//	outitr++;
-			//}
+	//  Write header
+	//  First line is list of PO's
+	for(k = 0;k<PO_Nodes.size();k++){
+		fprintf(fptrOut,"%d",PO_Nodes[k]);
+		//  If this is the last entry, line return else comma
+		if(k<(PO_Nodes.size()-1)){
+			fprintf(fptrOut,","); 
+		}else{
+			fprintf(fptrOut,"\n");
 		}
-		
 	}
-   fclose(fptr);
+	
+	
+	//  Determine the # of passes to simulate input
+	//  Can only do 32 patterns per pass (NBITS = 32)
+	int N_passes, N_patterns, n_patterns;
+	N_patterns = testPatterns.size();
+	//  Get ceil of N_patterns/NBITS;
+	N_passes = (N_patterns+NBITS-1)/NBITS;
+	int indStart, indEnd;
+	int Pass, patt;
+	//  Start going through the passes
+	for(Pass=0;Pass<N_passes;Pass++){
+		//  Find start and stop indexes in test pattern list for this pass
+		indStart = Pass*NBITS;
+		indEnd = indStart+min(NBITS, N_patterns-Pass*NBITS) -1;
+		//  Write test patterns to PI's
+		setPatterns(indStart, indEnd);
+
+		//  Add PI list to queue
+		nodeQueue.clear();
+		for(j=0;j<PI_list.size();j++){
+			addNodeToQueue(PI_list[j]);
+		}
+		// Process the Node queue
+		// Simulates logic of each node
+		processNodeQueue();
+		
+		//  Write outputs to file
+		n_patterns = indEnd-indStart+1;
+		for(patt=n_patterns-1;patt>=0;patt--){
+			for(k = 0;k<PO_Nodes.size();k++){
+				//  Use the "getLogic" to convert 5-value logic to a character
+				fprintf(fptrOut,"%c",getLogic(PO_Nodes[k], patt));
+				//  Print a , or a line-return if this is last entry
+				if(k<(PO_Nodes.size()-1)){
+					fprintf(fptrOut,",");
+				}else{
+					fprintf(fptrOut,"\n");
+				}
+			}
+		}
+
+	}
+	//  Done writing file
+	fclose(fptrOut);
+	
 	
 }
+
+char getLogic(int nodeRef,int index){
+	//  Returns an ascii character based on the logic at the specified index
+	//  Logic is 3x32, each column is a result from a test pattern
+	NSTRUC *np;
+	bool log[3];
+	np = &NodeV[ref2index[nodeRef]];
+	uint32_t mask = 1<<index;
+	for(int i = 0;i<3;i++){
+		//  Isolate only the bit at index
+		log[i] = (np->logic3[i] & mask);
+	}
+	if((log[0]==false) & (log[1]==false)){
+		return '0';
+	}
+	if((log[0]==true) & (log[1]==true)){
+		return '1';
+	}
+	if((log[0]==false) & (log[1]==true)){
+		return 'X';
+	}
+	//  Unknown result, pass 'U'
+	return 'U';
+	
+	
+}
+
+void setPatterns(int indStart, int indEnd){
+	//  This function assigns the specified test patterns 
+	//  to the PI's 
+	NSTRUC *np;
+	int PI, k, patt;
+	//  Cycle through each PI and apply all of the test patterns
+	//  simultaneously (max of 32)
+	for(int PI = 0;PI<PI_list.size();PI++){
+		//  Get the current PI
+		np = &NodeV[ref2index[PI_list[PI]]];
+		//  Set to initial state of 'X'
+		np->logic3[0] = 0;
+		np->logic3[1] = 0xFFFFFFFF;
+		np->logic3[2] = 0;
+		for(int patt =indStart;patt<=indEnd;patt++){
+			//Cycle through each test pattern
+			//Get logic value of this PI for this test pattern
+			char logic = testPatterns[patt][PI];
+			//Left<<shift adds 0 to the LSB
+			np->logic3[0] = np->logic3[0]<<1;
+			np->logic3[1] = np->logic3[1]<<1;
+			np->logic3[2] = np->logic3[2]<<1;
+			switch (logic){
+				case '0':
+					//  Nothing to do here; already set to 
+					// 0;0;0
+					break;
+				case '1':
+					// 1;1;0
+					np->logic3[0] += 1;
+					np->logic3[1] += 1;
+					break;
+				default:
+					// 0;1;0
+					np->logic3[1] += 1;
+			}
+		}//  End loop for each test pattern
+	}// End loop for each PI
+}
+
+
+
+
+void addNodeToQueue(int nodeRef){
+
+	//  First determine if this node is already in the queue
+	vector< pair<int,int> > ::iterator qIter;
+	for(qIter = nodeQueue.begin(); qIter!=nodeQueue.end();qIter++){
+		if(qIter->second==nodeRef){
+			//  Already in queue, exit
+		return;
+		}
+	}
+
+	
+	//  Get pointer to this node
+	NSTRUC *np;
+	np = &NodeV[ref2index[nodeRef]];
+	//  Add it to the queue
+	//  First item is level, second is reference
+	nodeQueue.push_back(make_pair(np->level, np->ref));
+	//  Sort by the level, largest to smallest
+	sort(nodeQueue.rbegin(), nodeQueue.rend());
+}
+
+void addAllNodesToQueue(void){
+	vector<NSTRUC>::iterator nodeIter;
+	NSTRUC *np;
+	nodeQueue.clear();
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter)
+	{
+		//  Add it to the queue
+		//  First item is level, second is reference
+		nodeQueue.push_back(make_pair(nodeIter->level, nodeIter->ref));
+	}
+	//  Sort by the level, largest to smallest
+	sort(nodeQueue.rbegin(), nodeQueue.rend());
+}
+
+
 void processNodeQueue(void){
 	//  Function to process all of the nodes in the queue
 	//  Need to determine current logic of these nodes based on the inputs
 	//  Assumes levelization has already occurred.
 	NSTRUC *np;
-	
-	//  Start at level 0, work up
-	int curLevel = 0;
+	bool logicChanged;
 	while (nodeQueue.size()>0){
-		for(int i=0;i<nodeQueue.size();i++){
-			//  Get pointer to current node in queue.
-			np = &NodeV[ref2index[nodeQueue[i]]];
-			//  Check if level is low enough to proceed
-			if(np->level<=curLevel){
-				//  Logic simulation of this node
-				simNode(np->ref);
-				//  Now add all downstream nodes to the queue
-				for(int k = 0;k<np->fout;k++){
-					nodeQueue.push_back(np->downNodes[k]);
-				}
-				//  Done; remove this node
-				nodeQueue.erase(nodeQueue.begin()+i);
-				
-			}
-		
+		//  Get pointer to the last node in the queue
+		//  This will have the lowest level
+		np = &NodeV[ref2index[nodeQueue.back().second]];
+		nodeQueue.pop_back();//  Remove this node
+		//  Perform logic simulation
+		//printf("Processing Node %d\n",np->ref);
+		logicChanged = simNode3(np->ref);
+		//  Now add all downstream nodes to the queue if the logic changed
+		if (logicChanged){
+			for(int k = 0;k<np->fout;k++){
+				addNodeToQueue(np->downNodes[k]);
+			}	
 		}
-		//  Move to next level
-		curLevel++;
-		
 	}
 	
 }
-
-void simNode(int nodeRef){
+bool simNode3(int nodeRef){
 	//  Function to determine current logic of this node
 	//  based on logic of upstream nodes.
+	//  Uses 3-bit logic; currently only 0, 1, X
+	//  Output True:   Node logic has changed
+	//  Output False:  Nodelogic has not changed
 	NSTRUC *np;
-	int i;
-	std::vector<bool> inputs;
-	bool firstIn;
+	NSTRUC *npIn_A;
+	NSTRUC *npIn_B;
+	//  Misc Counters
+	int i, k, inp;
+	
+	// Placeholders for logic
+	uint32_t oldLogic[3], temp0, temp1;
 	
 	//  Get pointer to current node
 	np = &NodeV[ref2index[nodeRef]];
+	int N_inputs = np->upNodes.size();
 	
+	//  Check if this is a PI
 	if(np->gateType == IPT){
 		//  Input; logic already set
-		//  Nothing to do here, return
-		return;
+		//  Nothing to do here, 
+		//  return true to ensure downstream nodes are processed.
+		return true;
 	}
-	
-	if(np->fin==0){
+	//  Check if there are any inputs
+	if(N_inputs==0){
 		//  No upstream nodes
-		//  Nothing to do, return;
-		return;
+		//  return true to ensure downstream nodes are processed.
+		return true;
 	}
-	
-	//  Generate array of bool inputs
-	NSTRUC *inNode;
-	for(i=0;i<np->fin;i++){
-		inNode = &NodeV[ref2index[np->upNodes[i]]];
-		inputs.push_back(inNode->logic);
+	//  Save current logic to determine if it has changed later
+	for(k=0;k<3;k++){
+		oldLogic[k] = np->logic3[k];
 	}
-	
-	
+	//  Get first input node
+	npIn_A = &NodeV[ref2index[np->upNodes[0]]];
+	//  Simulate logic
 	switch (np-> gateType){
 		case IPT:
 			//  Nothing to do here
 			break;
 		case BRCH:
 			//  Set equal to the input
-			np->logic = inputs[0];
-			return;
+			//  Should only be 1 input
+			for(k=0;k<3;k++){
+				np->logic3[k] = npIn_A->logic3[k];
+			}
 			break;
 		case XOR:
-			//  If any inputs are different than the first one
-			//  then true can be returned.
-			firstIn = inputs[0];
-			for(i = 0;i<inputs.size();i++){
-				if(inputs[i]!=firstIn){
-					np->logic = true;
-					return;
-				}
+		case XNOR:
+			//  Assume only 2 inputs possible
+			npIn_B = &NodeV[ref2index[np->upNodes[1]]];
+			for(k=0;k<3;k++){
+				// Bitwise XOR
+				np->logic3[k] = npIn_A->logic3[k] ^ npIn_B->logic3[k];
 			}
-			np->logic = false;
-			return;
+			//  Fix for inversion with 'X'
+			temp0 = np->logic3[0];
+			temp1 = np->logic3[1];
+			np->logic3[0] = temp0 & temp1;
+			np->logic3[1] = temp0 | temp1;
+			//  Fix for scenario inp A and B = 'X';
+			temp0 = np->logic3[1];
+			np->logic3[2] = ((npIn_A->logic3[0]^npIn_A->logic3[1])&
+				(npIn_B->logic3[0]^npIn_B->logic3[1]))|temp0;
 			break;
 		case AND:
-			//  If any inputs are false, return false
-			for(i=0;i<inputs.size();i++){
-				if(inputs[i]==false){
-					np->logic = false;
-					return;
-				}
-			}
-			np->logic = true;
-			return;
-			break;
 		case NAND:
-			//  If any inputs are false, return true
-			for(i=0;i<inputs.size();i++){
-				if(inputs[i]==false){
-					np->logic = true;
-					return;
+			if(N_inputs==1){
+				//  Special condition; must treat "AND" gate as a buffer with 1 input
+				for(k=0;k<3;k++){
+					np->logic3[k] = npIn_A->logic3[k];
+				}
+			}else{
+				for (inp = 1;inp<N_inputs;inp++){
+					npIn_B = &NodeV[ref2index[np->upNodes[inp]]];
+					//  Bitwise &
+					for(k=0;k<3;k++){
+						np->logic3[k] = npIn_A->logic3[k] & npIn_B->logic3[k];
+					}
+					//  For more than 2 inputs, set first input equal to 
+					//  previous result.
+					npIn_A = np;
 				}
 			}
-			np->logic = false;
-			return;
+
 			break;
 		case OR:
-			//  If any inputs are true, return true
-			for(i=0;i<inputs.size();i++){
-				if(inputs[i]==true){
-					np->logic = true;
-					return;
-				}
-			}
-			np->logic = false;
-			return;
-			break;
 		case NOR:
-			//  If any inputs are true, return false;
-			for(i=0;i<inputs.size();i++){
-				if(inputs[i]==true){
-					np->logic = false;
-					return;
+			for (inp = 1;inp<N_inputs;inp++){
+				npIn_B = &NodeV[ref2index[np->upNodes[inp]]];
+				for(k=0;k<3;k++){
+					//  Bitwise OR
+					np->logic3[k] = npIn_A->logic3[k] | npIn_B->logic3[k];
 				}
+				//  For more than 2 inputs, set first input equal to 
+				//  previous result.
+				npIn_A = np;
 			}
-			np->logic = true;
-			return;
 			break;
 		case NOT:
-			//  Return the inverse of the input
-			if(inputs[0]==true){
-				np->logic = false;
-			}else{
-				np->logic = true;
+			//  Just copy over; inversion handled in next step
+			for(k=0;k<3;k++){
+				np->logic3[k] = npIn_A->logic3[k];
 			}
-			return;
 			break;
 		default:
 			printf("Node type %d not recognized\n",np->gateType);
 	}
-		
+	
+	//  Output Inversion
+	if((np->gateType == XNOR)||
+		(np->gateType==NAND) ||
+		(np->gateType==NOR) ||
+		(np->gateType==NOT))
+	{
+		//  Invert logic; C1 = NOT(A2), C2 = NOT(A1)
+		temp0 = np->logic3[0];
+		np->logic3[0] = ~np->logic3[1];
+		np->logic3[1] = ~temp0;
+	}
+	
+	//////////////////////////debug //////////////////////
+	/*
+	char refStr[10];
+	printf("Processing Node:  %s, %d\n",gname(np->gateType), np->ref);
+	sprintf(refStr,"%d", np->ref);
+	printNode(refStr);
+	printf("\nInputs:");
+	printf("\n");
+	for(k=0;k<np->upNodes.size();k++){
+		sprintf(refStr,"%d", np->upNodes[k]);
+		printNode(refStr);
+	}
+	printf("\n\n\n");
+	*/
+	//////////////////////////debug //////////////////////
+	
+	//  Function output to see if logic has changed
+	for(k=0;k<3;k++){
+		if(oldLogic[k] != np->logic3[k]){
+			return true;
+		}
+	}
+	return false;
+	
 	
 }
-	
 
 
 
@@ -422,13 +670,13 @@ description:
 void cread(char *cp)
 {
 	char buf[MAXLINE];
-	int  i, j, k, ref, tp = 0;
+	int  i, j, k, ref = 0;
 	FILE *fd;
 	enum e_nodeType nodeType;
 	enum e_gateType gateType;
 	
 	
-	std::vector<NSTRUC>::iterator nodeIter;
+	vector<NSTRUC>::iterator nodeIter;
 
 	sscanf(cp, "%s", buf);
 	if((fd = fopen(buf,"r")) == NULL) {
@@ -438,36 +686,26 @@ void cread(char *cp)
 	
 	//  Enter filename into global filename variable
 	strcpy(curFile, buf);
-
+	
+	//  If another circuit is already loaded, clear it
 	if(Gstate >= CKTLD) clear();
 	
-	
-	Nnodes = Npi = Npo   = Ngates =0;
+	//  Step through each line and parse the node	
 	fseek(fd, 0L, 0);
-	int index=0;
+	int index=0; //  Counter for current index
 	while(fscanf(fd, "%d %d", &nodeType, &ref) != EOF) {
+		//  New Node
 		NSTRUC tempNode;
 		tempNode.ref = ref;
 		tempNode.level = -1;
-		tempNode.logic = true;
+		//  Unknown state, 010
+		tempNode.logic3[0] = 0;
+		tempNode.logic3[1] = 0xFFFFFFFF;
+		tempNode.logic3[2] = 0;
 		tempNode.indx = index++;
 		tempNode.nodeType = nodeType;
-		
-		//  Keep track of the number of gates
-		if (nodeType>1){
-			//  This is a gate
-			
-		}
-		Nnodes ++;
-		
-		if(nodeType==PI){
-			PI_Nodes.push_back(tempNode);
-			Npi++;
-		}else if (nodeType==PO){
-			PO_Nodes.push_back(tempNode);
-			Npo++;
-		}
-		
+
+		//  Parse in node
 		switch(nodeType) {
 			case PI:
 
@@ -475,9 +713,6 @@ void cread(char *cp)
 
 			case GATE:
 				fscanf(fd, "%d %d %d", &tempNode.gateType, &tempNode.fout, &tempNode.fin);
-				if(tempNode.gateType>1){
-					Ngates++;
-				}
 				break;
 				
 			case FB:
@@ -494,46 +729,67 @@ void cread(char *cp)
 			fscanf(fd, "%d", &ref);
 			tempNode.upNodes.push_back( ref);
 		}
+		//  Add new node
 		NodeV.push_back(tempNode);
     }
 	//  Done processing through file
 	fclose(fd);
 	
+	//  Generate node indexes 
 	genNodeIndex();
 	
+	//  Count node types
+	Nnodes = Npi = Npo   = Ngates =0; // Global variables
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter)
+	{
+		Nnodes++;
+		if(nodeIter->gateType>1){
+			Ngates++;
+		}
+		if(nodeIter->nodeType == PI){
+			PI_Nodes.push_back(nodeIter->ref);
+			Npi++;
+		}else if (nodeIter->nodeType == PO){
+			PO_Nodes.push_back(nodeIter->ref);
+			Npo++;
+		}
+	}
+
+	//  Create the downstream/output node list for each node	
 	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
 		for(j=0;j<nodeIter->fin;j++){
 			int ref = nodeIter->upNodes[j];
 			NodeV[ref2index[ref]].downNodes.push_back(nodeIter->ref);
-			
 		}
-		
+	}
+	//  Set fin and fout
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		nodeIter->fin = nodeIter->upNodes.size();
+		nodeIter->fout = nodeIter->downNodes.size();
 	}
 	
+	//  Levelize Nodes
+	levelizeNodes();
    
-	
+	//  Done; circuit is loaded
 	Gstate = CKTLD;
 	printf("==> OK\n");
 }
 
 void genNodeIndex(void){
 	//  Regenerates reference vectors of the global NodeV vector
-	// 	index2ref supplies the reference # for a given index
 	//  ref2index supplies the index for a given reference #
 	
-	std::vector<NSTRUC>::iterator nodeIter;
+	vector<NSTRUC>::iterator nodeIter;
 	int i;
 	
 	//  Clear vectors first
-	index2ref.clear();
 	ref2index.clear();
 	
-	
-	//  Create the index2ref array
-	//  Also find the maximum value of the reference #
+
+	//  Find the maximum value of the reference #
 	int maxRef = 0;
 	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
-		index2ref.push_back(nodeIter->ref);
 		if(nodeIter->ref>maxRef){
 			maxRef = nodeIter->ref;
 		}
@@ -550,51 +806,6 @@ void genNodeIndex(void){
 		ref2index[nodeIter->ref] = i++;
 	}
 
-}
-
-/*-----------------------------------------------------------------------
-input: nothing
-output: nothing
-called by: main
-description:
-  The routine prints out the circuit description from previous READ command.
------------------------------------------------------------------------*/
-
-void pc(char *cp)
-{
-	int i, j;
-   
-	std::vector<NSTRUC>::iterator np;
-
-   
-	printf(" Node   Type \tIn     \t\t\tOut     \t\tLogic\n");
-	printf("------ ------\t-------\t\t\t-------\n");
-	for(np=NodeV.begin();np!=NodeV.end();np++) {
-      
-		printf("\t\t\t\t\t");
-		for(j = 0; j<np->fout; j++) 
-			printf("%d ",np->downNodes[j]);
-		printf("\t\t\t %d", np->logic);
-		printf("\r%5d  %s\t", np->ref, gname(np->gateType));
-		for(j = 0; j<np->fin; j++) 
-			printf("%d ",np->upNodes[j]);
-		printf("\n");
-	}
-   
-	printf("Primary inputs:  ");
-    for(np=PI_Nodes.begin();np!=PI_Nodes.end();np++) {
-		printf("%d ",np->ref);
-	}
-	printf("\n");
-	printf("Primary outputs: ");
-	for(np=PO_Nodes.begin();np!=PO_Nodes.end();np++) {
-		printf("%d ",np->ref);
-	}
-	printf("\n\n");
-	printf("Number of nodes = %d\n", Nnodes);
-	printf("Number of primary inputs = %d\n", Npi);
-	printf("Number of primary outputs = %d\n", Npo);
-   
 }
 
 
@@ -618,7 +829,7 @@ void levelizeNodes(void)
 {
 	//NSTRUC *np;
 	
-	std::vector<NSTRUC>::iterator np;
+	vector<NSTRUC>::iterator np;
 	
 	//  Levelization algorithm	
 	int noAction;  //  Indicator to see if any levels are applied
@@ -670,7 +881,7 @@ void lev(char *cp)
 {
 	int i, j, k;
 	//NSTRUC *np;
-	std::vector<NSTRUC>::iterator np;
+	vector<NSTRUC>::iterator np;
    
 	//  Code to get name of circuit from file-name
 	//  Example:  Converts "./circuits/c17.ckt" to "c17"
@@ -695,16 +906,7 @@ void lev(char *cp)
 	
 	
 	levelizeNodes();
-	/*
-	//  Debug Print to Console
-	printf("%s\n", curFile);
-	printf("#PI: %d\n#PO: %d\n",Npi, Npo);
-	printf("#Nodes: %d\n#Gates: %d\n",Nnodes, nGates);
-	for(i=0;i<Nnodes;i++){
-		np = &Node[i];
-		printf("%d %d\n",np->num, np->level);
-	}
-	*/
+
 	
 	
 	//  Write File
@@ -725,7 +927,7 @@ void lev(char *cp)
 		fprintf(fptr,"%d %d\n",np->ref, np->level);
 	}
 	//  Done writing file
-	fclose(fptr);;
+	fclose(fptr);
 	
 	//  Print OK to console
 	printf("==> OK\n");
@@ -734,24 +936,6 @@ void lev(char *cp)
 
 
 
-/*-----------------------------------------------------------------------
-input: nothing
-output: nothing
-called by: main 
-description:
-  The routine prints ot help inormation for each command.
------------------------------------------------------------------------*/
-void help(char*)
-{
-   printf("READ filename - ");
-   printf("read in circuit file and creat all data structures\n");
-   printf("PC - ");
-   printf("print circuit information\n");
-   printf("HELP - ");
-   printf("print this help information\n");
-   printf("QUIT - ");
-   printf("stop and exit\n");
-}
 
 /*-----------------------------------------------------------------------
 input: nothing
@@ -786,22 +970,112 @@ void clear(void)
    Nnodes = 0;
    Npi = 0;
    Npo = 0;
-   index2ref.clear();
    ref2index.clear();
    Gstate = EXEC;
 }
 
 
-/*-----------------------------------------------------------------------
-input: gate type
-output: string of the gate type
-called by: pc
+
+
+/*-----------   Display Functions-----------------------------------
+input: nothing
+output: nothing
+called by: main
 description:
-  The routine receive an integer gate type and return the gate type in
-  character string.
+  The routine prints out the circuit description from previous READ command.
 -----------------------------------------------------------------------*/
-//char *gname(tp)
-//int tp;
+
+void pc(char *cp)
+{
+	int i, j;
+   
+	vector<NSTRUC>::iterator np;
+
+
+   
+	printf("Node    Logic   Level   Type    In      \t\t\tOut\n");
+	printf("------  ------  ------  ------  ------  \t\t\t-------\n");
+	for(np=NodeV.begin();np!=NodeV.end();np++) {
+      
+		printf("\t\t\t\t\t\t\t\t");
+		for(j = 0; j<np->fout; j++) 
+			printf("%d ",np->downNodes[j]);
+		printf("\r%5d   %d       %5d   %s\t", np->ref, np->logic3[0], np->level, gname(np->gateType));
+		for(j = 0; j<np->fin; j++) 
+			printf("%d ",np->upNodes[j]);
+		printf("\n");
+	}
+   
+	printf("Primary inputs:  ");
+    for(i=0;i<PI_Nodes.size();i++) {
+		printf("%d ",PI_Nodes[i]);
+	}
+	printf("\n");
+	printf("Primary outputs: ");
+	for(i=0;i<PO_Nodes.size();i++) {
+		printf("%d ",PO_Nodes[i]);
+	}
+	printf("\n\n");
+	printf("Number of nodes = %d\n", Nnodes);
+	printf("Number of primary inputs = %d\n", Npi);
+	printf("Number of primary outputs = %d\n", Npo);
+   
+}
+
+void printNode(char *nodeStr){
+	//  Simple function to print the node
+	//  >>printnode 22
+	int a[NBITS], i, k, nodeRef;
+	uint32_t n;
+	
+	stringstream temp(nodeStr);
+	temp>>nodeRef;
+	
+	if(nodeRef>(ref2index.size()-1)){
+		printf("\n Node %d out of range\n",nodeRef);
+		return;
+	}
+	NSTRUC *np;
+	np = &NodeV[ref2index[nodeRef]];
+	printf("Node %d:\n",np->ref);
+	printf("  Gate Type: %s\n",gname(np->gateType));
+	printf("  Node Type: %s\n",nname(np->nodeType));	
+	printf("  Level: %d\n", np->level);
+	printf("  Logic:\n   ");
+	for(k=0;k<3;k++){
+		n = np->logic3[k];
+		// Loop to calculate and store the binary format
+		for (i = 0; i<NBITS; i++) {
+			a[NBITS-i-1] = n % 2;
+			n = n / 2;
+		}
+		// Loop to print the binary format of given number
+		for (i = 0;i<NBITS;i++) 
+		{
+			printf("%d", a[i]);
+		}
+		printf("\n   ");
+	}
+	
+}
+
+void printTestPatterns(void){
+	int j, k;
+	printf("PI List:\n");
+	for(k=0;k<PI_list.size();k++){
+		printf("%d,",PI_list[k]);
+	}
+	printf("\nTest Patterns:\n");
+	for(j=0;j<testPatterns.size();j++){
+		for(k=0;k<testPatterns[j].size();k++){
+			printf("%c,",testPatterns[j][k]);
+		}
+		printf("\n");
+	}
+	
+}
+
+
 const char *gname(int tp)
 {
    switch(tp) {
@@ -813,7 +1087,38 @@ const char *gname(int tp)
       case 5: return("NOT");
       case 6: return("NAND");
       case 7: return("AND");
+	  case 8: return("XNOR");
    }
 }
+
+const char *nname(int tp)
+{
+   switch(tp) {
+      case 0: return("GATE");
+      case 1: return("PI");
+      case 2: return("FB");
+      case 3: return("PO");
+   }
+}
+
+void help(char*)
+{
+   printf("READ filename - ");
+   printf("read in circuit file and creat all data structures\n");
+   printf("PC - ");
+   printf("print circuit information\n");
+   printf("HELP - ");
+   printf("print this help information\n");
+   printf("LEV filename - ");
+   printf("Levelize the currently loaded circuit, writes levels to 'filename'\n");
+   printf("LOGICSIM filename1 filename2 - ");
+   printf("Perform logic simulation; read PI inputs from 'filename1', writes PO outputs to 'filename2'\n");
+   printf("PRINTNODE node# - ");
+   printf("Prints the information for the node specified\n");
+   printf("QUIT - ");
+   printf("stop and exit\n");
+}
+
+
 /*========================= End of program ============================*/
 
