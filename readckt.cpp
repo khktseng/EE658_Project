@@ -95,7 +95,7 @@ void processNodeQueue(void);
 void processNodeQueue(void);
 void simNode(int );
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 6
+#define NUMFUNCS 7
 void cread(char *);
 void pc(char *);
 void help(char *);
@@ -103,6 +103,7 @@ void quit(char *);
 void lev(char *);
 void logicSim(char *);
 void logicInit(void);
+void rfl(char *);
 struct cmdstruc command[NUMFUNCS] = {
 	{"READ", cread, EXEC},
 	{"PC", pc, CKTLD},
@@ -110,6 +111,7 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"QUIT", quit, EXEC},
 	{"LEV", lev, CKTLD},
 	{"LOGICSIM", logicSim, CKTLD},
+	{"RFL", rfl, CKTLD},
 };
 
 /*----------------Global Variables-----------------------------------------*/
@@ -397,10 +399,35 @@ void simNode(int nodeRef){
 		
 	
 }
-	
 
-
-
+void rfl(char *cp)
+{
+	std::vector<NSTRUC>::iterator np;
+	int checkpoints = Npi;
+	int j;
+	FILE *fptr;
+	char writeFile[MAXLINE];
+	sscanf(cp, "%s", writeFile);
+	if((fptr = fopen(writeFile,"w")) == NULL) {
+		printf("File %s cannot be read!\n", writeFile);
+		return;
+	}
+   
+	for(np = NodeV.begin(); np!= NodeV.end(); np++){
+		if(np->type == 0){
+			fprintf(fptr, "%d@0\n", np->indx+1);
+			fprintf(fptr, "%d@1\n", np->indx+1);
+		}
+		for(j = 0; j<np->fout; j++){
+			if(np->fout > 1)
+			{
+				fprintf(fptr,"%d@0\n",np->downNodes[j]);
+				fprintf(fptr,"%d@1\n",np->downNodes[j]);
+			}
+		}
+	}
+	fclose(fptr);
+}
 /*-----------------------------------------------------------------------
 input: circuit description file name
 output: nothing
