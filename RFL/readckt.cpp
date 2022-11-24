@@ -50,7 +50,7 @@ Circuit Simulator and ATPG
 
 using namespace std;
 
-#define MAXLINE 100               /* Input buffer size */
+#define MAXLINE 200               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
 
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
@@ -77,6 +77,7 @@ enum e_gateType {
 	XNOR = 8,
 };  
 
+
 struct cmdstruc {
    char name[MAXNAME];        /* command syntax */
    void (*fptr)(char *);             /* function pointer of the commands */
@@ -93,15 +94,14 @@ typedef struct n_struc {
    vector<int> upNodes;
    vector<int> downNodes;
    int level;                 /* level of the gate output */
-   int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
-   int fmask_AND; 	//  Fault Mask, AND
-   int fmask_OR;	//  Fault Mask, OR
+   //bool logic;
+   int logic3[3]; //  for 5-state logic; 0, 1, X, D, Dbar
 } NSTRUC;                     
 
 typedef struct fault_struc{
 	unsigned ref;  	// line number(May be different from indx 
 	bool stuckAt; 	// Stuck at 0 or 1
-	vector<int> faultFound; // -1 = not found; else, is index of pattern
+	int faultFound; // -1 = not found; else, is index of pattern
 } FSTRUC;
 /*----------------  Function Declaration -----------------*/
 void allocate(void);
@@ -110,32 +110,16 @@ const char *gname(int );
 const char *nname(int );
 void levelizeNodes(void);
 void genNodeIndex(void);
-//  Logic Simulation
 void processNodeQueue(void);
-void addPiNodesToQueue(void);
 void addNodeToQueue(int );
 void logicInit(void);
 char getLogic(int , int);
 bool simNode3(int);
-void addOutputPattern(int);
-void checkFaults(int,int, int);
-//   Display printouts
 void printTestPatterns(void);
+void setPatterns(int, int);
 void printFaultList(void);
-//  Node Setup
-void setPI_forPLS(int, int);
-void setPI_forPFS(int);
-void setFaults(int, int);
-void resetFaultMasks(void);
-//  File Read/Write
-void readFaultList(char *);
-bool readTestPatterns(char *);
-void writeOutputPatterns(char *);
-void writeFaultsDetected(char *);
-void writeAllFaults(char *);
-
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 9
+#define NUMFUNCS 8
 void cread(char *);
 void pc(char *);
 void help(char *);
@@ -153,7 +137,6 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"LOGICSIM", logicSim, CKTLD},
 	{"PRINTNODE", printNode, CKTLD},
 	{"PFS", parallelFaultSimulation, CKTLD},
-	{"WRITEALLFAULTS", writeAllFaults, CKTLD},
 };
 
 /*----------------Global Variables-----------------------------------------*/
@@ -171,18 +154,14 @@ vector<int> PO_Nodes;
 vector<int> ref2index;
 vector< pair<int,int> > nodeQueue; //  First->level, second->node reference
 const int bitWidth = 8*sizeof(int);
-bool eventDriven = true;
 
 //  Paralell Test Pattern Simulation, scratchpad
 vector<int> PI_list;
 vector<vector<char> > testPatterns;
 
 //  Parallel Fault Simulation, scratchpad
-//   Will re-use testPatterns variable
 vector<FSTRUC> FaultV;
-
-//  Varible to store PO outputs
-vector<vector<char> > outputPatterns;
+//   Will re-use testPatterns
 
 /*------------------------------------------------------------------------*/
 
@@ -229,146 +208,34 @@ int main()
       else system(cline);
    }
 }
-/*----------------------------------------------------*/
 /*------Parallel Logic Simulation -------------------*/
-/*----------------------------------------------------*/
 void parallelFaultSimulation(char *cp)
 {
-	
+	FILE *fd;
 	char patternFile[MAXLINE];
 	char faultFile[MAXLINE];
 	char outFile[MAXLINE];
-	
-	 //  Ensure all nodes are simulated
-	 //  Necessary for paralell fault simulation
-	eventDriven = false;
-	
-	//  Read in file names
 	sscanf(cp, "%s %s %s", patternFile, faultFile, outFile);
+	
 	//Debug //////////
 	printf("\nTest Patterns: %s\nFault List: %s\nOutput: %s;\n", patternFile, faultFile, outFile);
 	////////////////////////////////////
 	
 	//  Read Fault List
-	readFaultList(faultFile);
-	//// --- Debug -------------
-	printFaultList(); //  Debug
-	// --------------------------
-	
-	//  Read Test Patterns; 1 or multiple
-	//  Test patterns saved to:
-	//     	vector<int> PI_list;
-	//		vector<vector<char> > testPatterns;
-	bool fileOK = readTestPatterns(patternFile);
-	if(!fileOK){return;}
-	
-	//// --- Debug -------------
-	printTestPatterns();
-	// --------------------------
-	
-	//  Perform fault simulation
-	//  Determine the # of passes to simulate all faults
-	//  Can only do (32/64-1) faults
-	//  first entry is always "no fault"
-	int N_passes, N_faults, faults;
-	int indStart, indEnd;
-	N_faults = FaultV.size();
-	N_passes = (N_faults+bitWidth-1)/(bitWidth-1); // Ceil function
-	
-	printf("\n %d fault patterns\n", testPatterns.size());
-	
-	for(int patt = 0;patt<testPatterns.size();++patt){
-
-		
-		for(int pass = 0;pass<N_passes;++pass){
-			//  Find start and stop indexes in fault list for this pass
-			indStart = pass*(bitWidth-1);
-			indEnd = (pass+1)*(bitWidth-1)-1;
-			indEnd = min(indEnd, (N_faults-1));
-			printf("Pass %d; Fault list start: %d, end: %d\n",pass, indStart, indEnd);
-			
-			//  Set input pattern at PI's
-			setPI_forPFS(patt);
-			// Set all fault masks to known value
-			resetFaultMasks();
-			setFaults(indStart, indEnd);
-			
-			//  Add PI list to queue
-			addPiNodesToQueue();
-			
-			// Simulate Circuit Logic
-			// Process the Node queue; simulates logic of each node
-			processNodeQueue();
-			
-			//  Check Results
-			//  Records if faults are found
-			checkFaults(indStart, indEnd, patt);
-		}			
+	if((fd = fopen(faultFile,"r")) == NULL) {
+		printf("\nFile %s cannot be opened\n", faultFile);
+		return;
 	}
-	
-	//  Done; write report
-	writeFaultsDetected(outFile);
-	
-	
-}
-
-void setFaults(int indStart, int indEnd){
-	int f;
-	int ref;
-	NSTRUC *np;
-	FSTRUC *fp;
-	int bitCounter = 1;//  Start at second bit
-	for(f = indStart;f<=indEnd;f++){
-		fp = &FaultV[f];
-		np = &NodeV[ref2index[fp->ref]];
-		if(fp->stuckAt){
-			//  Stuck at 1
-			np->fmask_OR = 1<<bitCounter;
-		}else{
-			//  Stuck at 0
-			np->fmask_AND = ~(1<<bitCounter);
-		}
-		bitCounter++;
+	FaultV.clear();
+	FSTRUC tempFault;
+	tempFault.faultFound = -1;
+	while(fscanf(fd, "%d@%d", &tempFault.ref, &tempFault.stuckAt) != EOF){
+		FaultV.push_back(tempFault);
 	}
-	
-	
+	fclose(fd);
+	printFaultList();
 }
 
-//  
-void checkFaults(int indStart,int indEnd, int patt){
-	int f, temp;
-	int nPo;
-	bool detected;
-	NSTRUC *np;
-	FSTRUC *fp;
-	int bitCounter = 1;//  Start at second bit
-	for(f = indStart; f<=indEnd;++f){
-		//  Cycle through each PO
-		detected = false;
-		for(nPo = 0;nPo<PO_Nodes.size();++nPo){
-			//  Get pointer to a PO
-			np = &NodeV[ref2index[PO_Nodes[nPo]]];
-			//  Check if logic at bitCounter 
-			//  is different than bit 0
-			for(int k=0;k<3;k++){
-				temp = np->logic3[k]& (1<<bitCounter);
-				temp = temp>>bitCounter;
-				detected = detected|((np->logic3[k]&1)!= temp);
-			}
-			
-			if(detected){
-				//printf("\nDetected fault %d",FaultV[f].ref);
-				//  Mark this fault as detected
-				fp = &FaultV[f];
-				fp->faultFound.push_back(patt);
-				//  No need to continue through remianing
-				//  PO's.  Exit loop early
-				break;
-			}
-		}//  Loop for each PO
-		++bitCounter;
-	}//  Loop for each fault
-}
 /*--------logicSim--------------------------------------------------------
 input: "input file", "output file"
 output: nothing
@@ -394,38 +261,103 @@ void logicSim(char *cp)
 {
 	// Perform a logic simulation
 	//  Some counters and temp variables
-	int j,k;
-	
-	// Run logic simulation in event-Driven mode
-	eventDriven = true;
-	
+	int temp, j,k;
+	char foo;
+	vector<char> tempPattern;
+		
 	//  Read File	
 	//  Input in form "fileToRead.txt fileToWrite.txt"
-	char patternFile[MAXLINE];
+	char readFile[MAXLINE];
 	char writeFile[MAXLINE];
-	sscanf(cp, "%s %s", patternFile, writeFile);
+	char buf[MAXLINE];
+	sscanf(cp, "%s %s", readFile, writeFile);
 	
 	//Debug //////////
-	printf("Read: %s, Write: %s;\n", patternFile, writeFile);
+	printf("Read: %s, Write: %s;\n", readFile, writeFile);
 	////////////////
 	
-	//  Read Test Patterns; 1 or multiple
-	//  Test patterns saved to:
-	//     	vector<int> PI_list;
-	//		vector<vector<char> > testPatterns;
-	bool fileOK = readTestPatterns(patternFile);
-	if(!fileOK){return;}
+	//  First open the file of primary inputs	
+	fstream fptrIn;
+	string lineStr;
+	fptrIn.open(readFile, ios::in);
+	if(!fptrIn.is_open()){
+		printf("File %s cannot be read!\n", readFile);
+		return;
+	}
+	PI_list.clear();//  Clear list of PI's
+	testPatterns.clear();//  Clear loaded test patterns
+	bool firstLine = true;
+	while(getline(fptrIn, lineStr)){
+		if(firstLine){
+			// First line is list of PI's
+			stringstream ss(lineStr);
+			while(ss>>temp){ //  Convert ascii to integer
+				//  Add this PI reference to the list
+				PI_list.push_back(temp);
+				ss>>foo;//  remove comma
+			}
+			firstLine = false;
+		}else{
+			// Subsequent lines are test patterns
+			tempPattern.clear();// pattern instance
+			int i = 0;
+			while(i<lineStr.size()){
+				tempPattern.push_back(lineStr[i]);
+				i=i+2;//  skip the comma
+			}
+			//  Add new pattern to vector of patterns
+			testPatterns.push_back(tempPattern);			
+		}
+	}
+	fptrIn.close();
 	
 	//// --- Debug -------------
 	printTestPatterns();
 	// --------------------------
 	
-	// Set all fault masks to known value
-	//  No faults are being simulated here
-	resetFaultMasks();
+	//  Data Quality Check /////////////////////////////////////////
+	//  Check that inputs are valid
+	for(j=0;j<PI_list.size();j++){
+		//  Check that PI reference does not exceed length of node vector
+		if(PI_list[j]>(ref2index.size()-1)){
+			printf("\nWarning, input file %s contains inputs exceeding range\n", readFile);
+			return;
+		}
+		//  Check that node is actually a PI
+		if(NodeV[ref2index[PI_list[j]]].nodeType != PI){
+			printf("\nWarning, input file %s contains inputs that are not PI\n", readFile);
+			return;
+		}
+	}
+	for(k=0;k<testPatterns.size();k++){
+		//  Check that each test pattern size is equal to the PI list size
+		if(testPatterns[k].size()!=PI_list.size()){
+			printf("\nWarning, input file %s test pattern size does not match PI size",readFile);
+			return;
+		}
+	}
+	/////////////////////////////////////////////////////////
 	
-	//  Clear output
-	outputPatterns.clear();
+	//  Open output text file
+	//  This must be done early since each pass writes an output
+	FILE *fptrOut;
+	if((fptrOut = fopen(writeFile,"w")) == NULL) {
+		printf("File %s cannot be written!\n", writeFile);
+		return;
+	}else{
+		printf("==> Writing file: %s\n",writeFile);
+	}
+	//  Write header
+	//  First line is list of PO's
+	for(k = 0;k<PO_Nodes.size();k++){
+		fprintf(fptrOut,"%d",PO_Nodes[k]);
+		//  If this is the last entry, line return else comma
+		if(k<(PO_Nodes.size()-1)){
+			fprintf(fptrOut,","); 
+		}else{
+			fprintf(fptrOut,"\n");
+		}
+	}
 	
 	
 	//  Determine the # of passes to simulate input
@@ -442,23 +374,36 @@ void logicSim(char *cp)
 		indStart = Pass*bitWidth;
 		indEnd = indStart+min(bitWidth, N_patterns-Pass*bitWidth) -1;
 		//  Write test patterns to PI's
-		setPI_forPLS(indStart, indEnd);
+		setPatterns(indStart, indEnd);
 
 		//  Add PI list to queue
-		addPiNodesToQueue();
-		
+		nodeQueue.clear();
+		for(j=0;j<PI_list.size();j++){
+			addNodeToQueue(PI_list[j]);
+		}
 		// Process the Node queue
 		// Simulates logic of each node
 		processNodeQueue();
 		
-		//  Add results to output array
+		//  Write outputs to file
 		n_patterns = indEnd-indStart+1;
-		addOutputPattern(n_patterns);
-		
+		for(patt=n_patterns-1;patt>=0;patt--){
+			for(k = 0;k<PO_Nodes.size();k++){
+				//  Use the "getLogic" to convert 5-value logic to a character
+				fprintf(fptrOut,"%c",getLogic(PO_Nodes[k], patt));
+				//  Print a , or a line-return if this is last entry
+				if(k<(PO_Nodes.size()-1)){
+					fprintf(fptrOut,",");
+				}else{
+					fprintf(fptrOut,"\n");
+				}
+			}
+		}
+
 	}
+	//  Done writing file
+	fclose(fptrOut);
 	
-	writeOutputPatterns(writeFile);
-		
 	//  Print "OK"
 	printf("\n==> OK\n");
 }
@@ -489,47 +434,9 @@ char getLogic(int nodeRef,int index){
 	
 }
 
-void setPI_forPFS(int patt){
+void setPatterns(int indStart, int indEnd){
 	//  This function assigns the specified test patterns 
-	//  to the PI's for paralell fault simulation
-	//  Only 1 input pattern is used
-	NSTRUC *np;
-	int PI, k;
-	//  Cycle through each PI and apply the test pattern
-
-	for(int PI = 0;PI<PI_list.size();PI++){
-		//  Get the current PI
-		np = &NodeV[ref2index[PI_list[PI]]];
-
-		//Get logic value of this PI for this test pattern
-		char logic = testPatterns[patt][PI];
-		switch (logic){
-			case '0':
-				//0;0;0
-				np->logic3[0] = 0;
-				np->logic3[1] = 0;
-				np->logic3[2] = 0;
-				break;
-			case '1':
-				// 1;1;0
-				np->logic3[0] = ~0;
-				np->logic3[1] = ~0;
-				np->logic3[2] = 0;
-				break;
-			default:
-				// 0;1;0
-				np->logic3[0] = 0;
-				np->logic3[1] = ~0;
-				np->logic3[2] = 0;
-		}
-	}// End loop for each PI
-	
-}
-
-void setPI_forPLS(int indStart, int indEnd){
-	//  This function assigns the specified test patterns 
-	//  to the PI's for paralell logic simulation
-	//  0 to 32/64 input patterns are used
+	//  to the PI's 
 	NSTRUC *np;
 	int PI, k, patt;
 	//  Cycle through each PI and apply all of the test patterns
@@ -539,7 +446,7 @@ void setPI_forPLS(int indStart, int indEnd){
 		np = &NodeV[ref2index[PI_list[PI]]];
 		//  Set to initial state of 'X'
 		np->logic3[0] = 0;
-		np->logic3[1] = ~0;// set to all 1's
+		np->logic3[1] = 0xFFFFFFFF;
 		np->logic3[2] = 0;
 		for(int patt =indStart;patt<=indEnd;patt++){
 			//Cycle through each test pattern
@@ -592,13 +499,19 @@ void addNodeToQueue(int nodeRef){
 	sort(nodeQueue.rbegin(), nodeQueue.rend());
 }
 
-void addPiNodesToQueue(void){
+void addAllNodesToQueue(void){
+	vector<NSTRUC>::iterator nodeIter;
+	NSTRUC *np;
 	nodeQueue.clear();
-	for(int j=0;j<PI_list.size();j++){
-		addNodeToQueue(PI_list[j]);
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter)
+	{
+		//  Add it to the queue
+		//  First item is level, second is reference
+		nodeQueue.push_back(make_pair(nodeIter->level, nodeIter->ref));
 	}
+	//  Sort by the level, largest to smallest
+	sort(nodeQueue.rbegin(), nodeQueue.rend());
 }
-
 
 
 void processNodeQueue(void){
@@ -616,8 +529,7 @@ void processNodeQueue(void){
 		//printf("Processing Node %d\n",np->ref);
 		logicChanged = simNode3(np->ref);
 		//  Now add all downstream nodes to the queue if the logic changed
-		//  If not event-driven, add all nodes regardless
-		if ((logicChanged)||(eventDriven == false)){
+		if (logicChanged){
 			for(int k = 0;k<np->fout;k++){
 				addNodeToQueue(np->downNodes[k]);
 			}	
@@ -645,28 +557,25 @@ bool simNode3(int nodeRef){
 	int N_inputs = np->upNodes.size();
 	
 	//  Check if this is a PI
-	if((np->gateType == IPT)||(N_inputs==0)){
+	if(np->gateType == IPT){
 		//  Input; logic already set
-		//  Nothing to do here except apply fault mask
-		//  Fault Application
-		for(k=0;k<2;k++){
-			np->logic3[k] = np->logic3[k] & np->fmask_AND;
-			np->logic3[k] = np->logic3[k] | np->fmask_OR;		
-		}
+		//  Nothing to do here, 
 		//  return true to ensure downstream nodes are processed.
 		return true;
 	}
-
+	//  Check if there are any inputs
+	if(N_inputs==0){
+		//  No upstream nodes
+		//  return true to ensure downstream nodes are processed.
+		return true;
+	}
 	//  Save current logic to determine if it has changed later
 	for(k=0;k<3;k++){
 		oldLogic[k] = np->logic3[k];
 	}
-	
-	
-	
-	//  Simulate logic ////////////////////
 	//  Get first input node
 	npIn_A = &NodeV[ref2index[np->upNodes[0]]];
+	//  Simulate logic
 	switch (np-> gateType){
 		case IPT:
 			//  Nothing to do here
@@ -715,6 +624,7 @@ bool simNode3(int nodeRef){
 					npIn_A = np;
 				}
 			}
+
 			break;
 		case OR:
 		case NOR:
@@ -751,12 +661,6 @@ bool simNode3(int nodeRef){
 		np->logic3[1] = ~temp0;
 	}
 	
-	//  Fault Application
-	for(k=0;k<2;k++){
-		np->logic3[k] = np->logic3[k] & np->fmask_AND;
-		np->logic3[k] = np->logic3[k] | np->fmask_OR;		
-	}
-	
 	//////////////////////////debug //////////////////////
 	/*
 	char refStr[10];
@@ -784,29 +688,6 @@ bool simNode3(int nodeRef){
 	
 }
 
-void resetFaultMasks(void){
-	vector<NSTRUC>::iterator nodeIter;
-	for(nodeIter = NodeV.begin(); nodeIter!=NodeV.end();nodeIter++){
-		nodeIter->fmask_AND = ~0;//  Set to all 1's
-		nodeIter->fmask_OR = 0;
-	}
-}
-void addOutputPattern(int n_patterns){
-	//  Write outputs to outputPatterns
-	//  For paralell processing, specify the # of patterns
-	vector<char> tempOutput;
-	
-	//  Cycle through each pattern.
-	for(int patt=n_patterns-1;patt>=0;patt--){
-		tempOutput.clear();
-		for(int k = 0;k<PO_Nodes.size();k++){
-			//  Use the "getLogic" to convert 5-value logic to a character
-			tempOutput.push_back(getLogic(PO_Nodes[k], patt));
-		}
-		outputPatterns.push_back(tempOutput);
-	}
-	
-}
 
 
 /*-----------------------------------------------------------------------
@@ -815,7 +696,17 @@ output: nothing
 called by: main
 description:
   This routine reads in the circuit description file and set up all the
-  required data structure.
+  required data structure. It first checks if the file exists, then it
+  sets up a mapping table, determines the number of nodes, PI's and PO's,
+  allocates dynamic data arrays, and fills in the structural information
+  of the circuit. In the ISCAS circuit description format, only upstream
+  nodes are specified. Downstream nodes are implied. However, to facilitate
+  forward implication, they are also built up in the data structure.
+  To have the maximal flexibility, three passes through the circuit file
+  are required: the first pass to determine the size of the mapping table
+  , the second to fill in the mapping table, and the third to actually
+  set up the circuit information. These procedures may be simplified in
+  the future.
 -----------------------------------------------------------------------*/
 void cread(char *cp)
 {
@@ -850,7 +741,7 @@ void cread(char *cp)
 		tempNode.level = -1;
 		//  Unknown state, 010
 		tempNode.logic3[0] = 0;
-		tempNode.logic3[1] = ~0;//  Set to all 1's
+		tempNode.logic3[1] = 0xFFFFFFFF;
 		tempNode.logic3[2] = 0;
 		tempNode.indx = index++;
 		tempNode.nodeType = nodeType;
@@ -917,9 +808,6 @@ void cread(char *cp)
 		nodeIter->fin = nodeIter->upNodes.size();
 		nodeIter->fout = nodeIter->downNodes.size();
 	}
-	
-	// Set all fault masks to known value
-	resetFaultMasks();
 	
 	//  Levelize Nodes
 	levelizeNodes();
@@ -1059,6 +947,8 @@ void lev(char *cp)
 	
 	
 	levelizeNodes();
+
+	
 	
 	//  Write File
 	FILE *fptr;
@@ -1084,191 +974,9 @@ void lev(char *cp)
 	printf("==> OK\n");
 	
 }
-/*=============================================*/
-//  Read/Write File Functions
-/*============================================*/
-void readFaultList(char *faultFile){
-	//  Read the Fault List
-	//  Format Example:
-	//   1@0
-	//   2@1
-	//   21@0
-	//   ...
-	FILE *fd;
-	if((fd = fopen(faultFile,"r")) == NULL) {
-		printf("\nFile %s cannot be opened\n", faultFile);
-		return;
-	}
-	FaultV.clear();
-	FSTRUC tempFault;
-	tempFault.faultFound.clear();
-	while(fscanf(fd, "%d@%d", &tempFault.ref, &tempFault.stuckAt) != EOF){
-		FaultV.push_back(tempFault);
-	}
-	fclose(fd);
-	
-}
-bool readTestPatterns(char *patternFile){
-	//  Read test patternf ile
-	//  First line is list of PI's
-	//  Subsequent lines are logic corresponding to those PI's.
-	fstream fptrIn;
-	string lineStr;
-	fptrIn.open(patternFile, ios::in);
-	char foo;
-	int temp;
-	vector<char> tempPattern;
-	
-	//  Open file
-	if(!fptrIn.is_open()){
-		printf("File %s cannot be read!\n", patternFile);
-		return false;
-	}
-	PI_list.clear();//  Clear list of PI's
-	testPatterns.clear();//  Clear loaded test patterns
-	bool firstLine = true;
-	while(getline(fptrIn, lineStr)){
-		if(firstLine){
-			// First line is list of PI's
-			stringstream ss(lineStr);
-			while(ss>>temp){ //  Convert ascii to integer
-				//  Add this PI reference to the list
-				PI_list.push_back(temp);
-				ss>>foo;//  remove comma
-			}
-			firstLine = false;
-		}else{
-			// Subsequent lines are test patterns
-			tempPattern.clear();// pattern instance
-			int i = 0;
-			while(i<lineStr.size()){
-				tempPattern.push_back(lineStr[i]);
-				i=i+2;//  skip the comma
-			}
-			//  Add new pattern to vector of patterns
-			testPatterns.push_back(tempPattern);			
-		}
-	}
-	fptrIn.close();
-	
-	
-	
-	//  Data Quality Check /////////////////////////////////////////
-	//  Check that inputs are valid
-	for(int j=0;j<PI_list.size();j++){
-		//  Check that PI reference does not exceed length of node vector
-		if(PI_list[j]>(ref2index.size()-1)){
-			printf("\nWarning, input file %s contains inputs exceeding range\n", patternFile);
-			return false;
-		}
-		//  Check that node is actually a PI
-		if(NodeV[ref2index[PI_list[j]]].nodeType != PI){
-			printf("\nWarning, input file %s contains inputs that are not PI\n", patternFile);
-			return false;
-		}
-	}
-	for(int j=0;j<testPatterns.size();j++){
-		//  Check that each test pattern size is equal to the PI list size
-		if(testPatterns[j].size()!=PI_list.size()){
-			printf("\nWarning, input file %s test pattern size does not match PI size",patternFile);
-			return false;
-		}
-	}
-	/////////////////////////////////////////////////////////
-	
-	return true;
-}
 
-void writeOutputPatterns(char *fileName){
-	FILE *fptrOut;
-	if((fptrOut = fopen(fileName,"w")) == NULL) {
-		printf("File %s cannot be written!\n", fileName);
-		return;
-	}else{
-		printf("==> Writing file of PO outputs: %s\n",fileName);
-	}
-	
-	//  Write header
-	//  First line is list of PO's
-	for(int k = 0;k<PO_Nodes.size();k++){
-		fprintf(fptrOut,"%d",PO_Nodes[k]);
-		//  If this is the last entry, line return else comma
-		if(k<(PO_Nodes.size()-1)){
-			fprintf(fptrOut,","); 
-		}else{
-			fprintf(fptrOut,"\n");
-		}
-	}
-	
-	//  Write each output pattern
-	for(int patt=0;patt<outputPatterns.size();++patt){
-		for(int k = 0;k<outputPatterns[patt].size();k++){
-			//  Write each value
-			fprintf(fptrOut,"%c",outputPatterns[patt][k]);
-			//  Print a , or a line-return if this is last entry
-			if(k<(PO_Nodes.size()-1)){
-				fprintf(fptrOut,",");
-			}else{
-				fprintf(fptrOut,"\n");
-			}
-		}
-	}	
-	
-	//  Done writing file
-	fclose(fptrOut);
-	
-}
 
-void writeFaultsDetected(char *fileName){
-	//  Write output from pfs
-	FILE *fptrOut;
-	FSTRUC *fp;
-	
-	if((fptrOut = fopen(fileName,"w")) == NULL) {
-		printf("File %s cannot be written!\n", fileName);
-		return;
-	}else{
-		printf("==> Writing file of PO outputs: %s\n",fileName);
-	}
-	
-	//  Cycle through fault list and mark if they are found
-	for(int i=0;i<FaultV.size();++i){
-		fp = &FaultV[i];
-		if(fp->faultFound.size()>0){
-			fprintf(fptrOut,"%d@%d\n",fp->ref, fp->stuckAt);
-		}
-	}
-		
-	//  Done writing file
-	fclose(fptrOut);
-}
 
-void writeAllFaults(char *cp){
-	//  Function to write all possible faults 
-	//  For debug
-	FILE *fptr;
-	NSTRUC *np;
-	char fileName[MAXLINE];
-	
-	sscanf(cp, "%s", fileName);
-	
-	if((fptr = fopen(fileName,"w")) == NULL) {
-		printf("File %s cannot be written!\n", fileName);
-		return;
-	}else{
-		printf("==> Writing file of PO outputs: %s\n",fileName);
-	}
-	
-	//  Cycle through fault list and mark if they are found
-	for(int i=0;i<NodeV.size();++i){
-		np = &NodeV[i];
-		for(int s = 0;s<2;++s){
-			fprintf(fptr,"%d@%d\n",np->ref, s);
-		}
-	}	
-	//  Done writing file
-	fclose(fptr);
-}
 
 /*-----------------------------------------------------------------------
 input: nothing
@@ -1382,11 +1090,12 @@ void printNode(char *nodeStr){
 		n = np->logic3[k];
 		// Loop to calculate and store the binary format
 		for (i = 0; i<bitWidth; i++) {
-			a[bitWidth-i-1] = n & 1;
-			n = n>>1;
+			a[bitWidth-i-1] = n % 2;
+			n = n / 2;
 		}
 		// Loop to print the binary format of given number
-		for (i = 0;i<bitWidth;++i) 
+		for (i = 0;i<bitWidth
+		;i++) 
 		{
 			printf("%d", a[i]);
 		}
