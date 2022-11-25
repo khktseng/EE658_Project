@@ -254,7 +254,6 @@ void pfs(char *cp)
 	char patternFile[MAXLINE];
 	char faultFile[MAXLINE];
 	char outFile[MAXLINE];
-	bool fileOK;
 	
 	 //  Ensure all nodes are simulated
 	 //  Necessary for paralell fault simulation
@@ -268,7 +267,7 @@ void pfs(char *cp)
 	
 	//  Read Fault List
 	//    Populates "FaultV"
-	fileOK = readFaultList(faultFile);
+	bool fileOK = readFaultList(faultFile);
 	if(!fileOK){return;}
 	//// --- Debug -------------
 	printFaultList(); //  Debug
@@ -278,7 +277,7 @@ void pfs(char *cp)
 	//  Test patterns saved to:
 	//     	vector<int> "PI_list";
 	//		vector<vector<char> > "inputPatterns";
-	fileOK = readTestPatterns(patternFile);
+	bool fileOK = readTestPatterns(patternFile);
 	if(!fileOK){return;}
 	
 	//// --- Debug -------------
@@ -1273,7 +1272,7 @@ void lev(char *cp)
 /*=============================================*/
 //  Read/Write File Functions
 /*============================================*/
-bool readFaultList(char *faultFile){
+void readFaultList(char *faultFile){
 	//  Read the Fault List
 	//  Format Example:
 	//   1@0
@@ -1284,7 +1283,7 @@ bool readFaultList(char *faultFile){
 	fd = fopen(faultFile,"r");
 	if(fd == NULL) {
 		printf("\nFile %s cannot be opened\n", faultFile);
-		return false;
+		return;
 	}
 	FaultV.clear();
 	FSTRUC tempFault;
@@ -1294,7 +1293,6 @@ bool readFaultList(char *faultFile){
 	}
 	fclose(fd);
 	
-	return true;
 }
 bool readTestPatterns(char *patternFile){
 	//  Read test patternf ile
