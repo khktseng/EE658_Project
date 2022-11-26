@@ -54,6 +54,7 @@ using namespace std;
 
 #define MAXLINE 100               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
+#define N_DROP	5	  	//Drop faults after detected this many times
 
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
 #define Lowcase(x) ((isalpha(x) && isupper(x))? tolower(x) : (x))
@@ -86,22 +87,22 @@ struct cmdstruc {
 };
 
 typedef struct n_struc {
-   unsigned indx;             /* node index(from 0 to NumOfLine - 1 */
-   unsigned ref;              /* line number(May be different from indx */
+   int indx;             /* node index(from 0 to NumOfLine - 1 */
+   int ref;              /* line number(May be different from indx */
    enum e_gateType gateType;         /* gate type */
    enum e_nodeType nodeType;         /* gate type */
-   unsigned fin;              /* number of fanins */
-   unsigned fout;             /* number of fanouts */
+   int fin;              /* number of fanins */
+   int fout;             /* number of fanouts */
    vector<int> upNodes;
    vector<int> downNodes;
    int level;                 /* level of the gate output */
-   int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
-   int fmask_AND; 	//  Fault Mask, AND
-   int fmask_OR;	//  Fault Mask, OR
+   unsigned int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
+   unsigned int fmask_AND; 	//  Fault Mask, AND
+   unsigned int fmask_OR;	//  Fault Mask, OR
 } NSTRUC;                     
 
 typedef struct fault_struc{
-	unsigned ref;  	// line number(May be different from indx 
+	int ref;  	// line number(May be different from indx 
 	bool stuckAt; 	// Stuck at 0 or 1
 	vector<int> faultFound; // -1 = not found; else, is index of pattern
 } FSTRUC;
@@ -126,6 +127,7 @@ void genAllFaults(void);
 float getFaultCoverage(void);
 void parallelFaultSimulation(void);
 void parallelLogicSimulation(void);
+void dropFaults(void);
 //   Display printouts
 void printInputPatterns(void);
 void printFaultList(void);
@@ -144,7 +146,7 @@ void writeAllFaults(char *);
 void writeFaultCoverageReport(vector<float>,char *);
 
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 10
+#define NUMFUNCS 11
 void cread(char *);
 void pc(char *);
 void help(char *);
@@ -192,6 +194,7 @@ vector<vector<char> > inputPatterns;
 //  Parallel Fault Simulation, scratchpad
 //   Will re-use inputPatterns variable
 vector<FSTRUC> FaultV;
+vector<FSTRUC> FaultV_Dropped;
 
 //  Varible to store PO outputs
 vector<vector<char> > outputPatterns;
@@ -303,6 +306,9 @@ void parallelFaultSimulation(void){
 	//		"inputPatterns"
 	//		"FaultV"
 	
+	// Run logic simulation processing each node
+	eventDriven = false;
+	
 	//  Determine the # of passes to simulate all faults
 	//  Can only do (32 or 64 -1) faults
 	//  first entry is always "no fault"
@@ -322,12 +328,11 @@ void parallelFaultSimulation(void){
 			indEnd = (pass+1)*(bitWidth-1)-1;
 			indEnd = min(indEnd, (N_faults-1));
 			//Debug
-			//printf("Pass %d; Fault list start: %d, end: %d\n",pass, indStart, indEnd);
+			//printf("Pass %d; Fault list start: %d, end: %d, total: %d\n",pass, indStart, indEnd, FaultV.size());
 			
 			//  Set input pattern at PI's
 			setPI_forPFS(patt);
 			// Set all fault masks to known value
-			resetFaultMasks();
 			setFaults(indStart, indEnd);
 			
 			//  Add PI list to queue
@@ -386,14 +391,20 @@ void randomTestGenerator(char *cp)
 		
 		//  Get current fault coverage
 		float FC = getFaultCoverage();
-		printf("\n%d of %d Patterns.  Fault Coverage: %0.2fn",
+		printf("%d of %d Patterns.  Fault Coverage: %0.2f\n",
 			(pass+1)*Ntfcr, Ntot, 100*FC);
 		faultCoverage.push_back(FC);
+		
+		//  Drop Faults
+		dropFaults();
 		
 		//  Record test patterns
 		//  Second input indicates header row to be added
 		writeInputPatterns(patternFile, (pass==0));
 	}
+	
+	// Debug
+	//printFaultList();
 	
 	//  Write fault coverage report
 	writeFaultCoverageReport(faultCoverage, fcFile);
@@ -403,23 +414,42 @@ void randomTestGenerator(char *cp)
 
 }
 
+void dropFaults(void){
+	//  Drop faults to speed up ATPG
+	FSTRUC *fp;
+	vector<FSTRUC>::iterator fIter;
+	
+	
+	for(int k=0;k<FaultV.size();++k){
+		fp = &FaultV[k];
+		if(fp->faultFound.size()>=N_DROP){
+			//printf("\nDropping fault %d\n",fp->ref);
+			FaultV_Dropped.push_back(FaultV[k]);
+			FaultV.erase(FaultV.begin()+k);
+			--k;
+		}
+	}
+	
+}
+
 float getFaultCoverage(void){
 	//  Get the current fault coverage
 	//  Based on the current vector FaultV
 	
-	int N_Faults = 0;
-	int N_Covered = 0;
+	int N_Total = 0;
+	int N_Detected = 0;
 	FSTRUC *fp;
 	for(int k=0;k<FaultV.size();++k){
 		fp = &FaultV[k];
-		++N_Faults;
 		if(fp->faultFound.size()>0){
-			++N_Covered;
+			++N_Detected;
 		}
 	}
-	float FC;
-	FC = N_Covered;
-	FC = FC/N_Faults;
+	N_Total = FaultV.size()+FaultV_Dropped.size();
+	N_Detected = N_Detected+FaultV_Dropped.size();
+	
+	float FC = N_Detected;
+	FC = FC/N_Total;
 	return FC;
 	
 }
@@ -432,6 +462,7 @@ void genAllFaults(void){
 	
 	//  First clear out fault vector.
 	FaultV.clear();
+	FaultV_Dropped.clear();
 	
 	tempFault.faultFound.clear();
 	for(int i=0;i<NodeV.size();++i){
@@ -452,16 +483,20 @@ void setFaults(int indStart, int indEnd){
 	int ref;
 	NSTRUC *np;
 	FSTRUC *fp;
+	
+	resetFaultMasks();
+	
+	
 	int bitCounter = 1;//  Start at second bit
-	for(f = indStart;f<=indEnd;f++){
+	for(f = indStart;f<=indEnd;++f){
 		fp = &FaultV[f];
 		np = &NodeV[ref2index[fp->ref]];
 		if(fp->stuckAt){
 			//  Stuck at 1
-			np->fmask_OR = 1<<bitCounter;
+			np->fmask_OR = (np->fmask_OR)|(1<<bitCounter);
 		}else{
 			//  Stuck at 0
-			np->fmask_AND = ~(1<<bitCounter);
+			np->fmask_AND = (np->fmask_AND)&(~(1<<bitCounter));
 		}
 		bitCounter++;
 	}
@@ -477,7 +512,8 @@ void checkFaults(int indStart,int indEnd, int patt){
 	//  Each PO node output is checked against bit 0 to see if the
 	//  output has changed with that fault.  If it has, the 
 	//  current pattern reference that found that fault is added.
-	int f, temp;
+	int f;
+	unsigned int temp;
 	int nPo;
 	bool detected;
 	NSTRUC *np;
@@ -491,7 +527,7 @@ void checkFaults(int indStart,int indEnd, int patt){
 			np = &NodeV[ref2index[PO_Nodes[nPo]]];
 			//  Check if logic at bitCounter 
 			//  is different than bit 0
-			for(int k=0;k<3;k++){
+			for(int k=0;k<2;k++){
 				temp = np->logic3[k]& (1<<bitCounter);
 				temp = temp>>bitCounter;
 				detected = detected|((np->logic3[k]&1)!= temp);
@@ -655,7 +691,7 @@ char getLogic(int nodeRef,int index){
 	NSTRUC *np;
 	bool log[3];
 	np = &NodeV[ref2index[nodeRef]];
-	int mask = 1<<index;
+	unsigned int mask = 1<<index;
 	for(int i = 0;i<3;i++){
 		//  Isolate only the bit at index
 		log[i] = (np->logic3[i] & mask);
@@ -824,7 +860,7 @@ bool simNode3(int nodeRef){
 	int i, k, inp;
 	
 	// Placeholders for logic
-	int oldLogic[3], temp0, temp1;
+	unsigned int oldLogic[3], temp0, temp1;
 	
 	//  Get pointer to current node
 	np = &NodeV[ref2index[nodeRef]];
@@ -1690,9 +1726,17 @@ void printFaultList(void){
 	vector<FSTRUC>::iterator iterF;
 	printf("\nFault List:\n");
 	for(iterF = FaultV.begin();iterF!=FaultV.end();++iterF){
-		printf("%d@%d\n",iterF->ref, iterF->stuckAt);
+		printf("%d@%d  %d\n",iterF->ref, iterF->stuckAt, iterF->faultFound.size());
 		
 	}
+	if(FaultV_Dropped.size()>0){
+		printf("\nDropped Fault List:\n");
+		for(iterF = FaultV_Dropped.begin();iterF!=FaultV_Dropped.end();++iterF){
+			printf("%d@%d  %d\n",iterF->ref, iterF->stuckAt, iterF->faultFound.size());
+		
+		}
+	}
+	
 	
 }
 
