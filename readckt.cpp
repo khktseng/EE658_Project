@@ -493,10 +493,10 @@ void setFaults(int indStart, int indEnd){
 		np = &NodeV[ref2index[fp->ref]];
 		if(fp->stuckAt){
 			//  Stuck at 1
-			np->fmask_OR = (np->fmask_OR)|(1<<bitCounter);
+			np->fmask_OR = (np->fmask_OR)|(1U<<bitCounter);
 		}else{
 			//  Stuck at 0
-			np->fmask_AND = (np->fmask_AND)&(~(1<<bitCounter));
+			np->fmask_AND = (np->fmask_AND)&(~(1U<<bitCounter));
 		}
 		bitCounter++;
 	}
@@ -528,7 +528,7 @@ void checkFaults(int indStart,int indEnd, int patt){
 			//  Check if logic at bitCounter 
 			//  is different than bit 0
 			for(int k=0;k<2;k++){
-				temp = np->logic3[k]& (1<<bitCounter);
+				temp = np->logic3[k]& (1U<<bitCounter);
 				temp = temp>>bitCounter;
 				detected = detected|((np->logic3[k]&1)!= temp);
 			}
@@ -691,7 +691,7 @@ char getLogic(int nodeRef,int index){
 	NSTRUC *np;
 	bool log[3];
 	np = &NodeV[ref2index[nodeRef]];
-	unsigned int mask = 1<<index;
+	unsigned int mask = 1U<<index;
 	for(int i = 0;i<3;i++){
 		//  Isolate only the bit at index
 		log[i] = (np->logic3[i] & mask);
@@ -768,9 +768,9 @@ void setPI_forPLS(int indStart, int indEnd){
 			//Get logic value of this PI for this test pattern
 			char logic = inputPatterns[patt][PI];
 			//Left<<shift adds 0 to the LSB
-			np->logic3[0] = np->logic3[0]<<1;
-			np->logic3[1] = np->logic3[1]<<1;
-			np->logic3[2] = np->logic3[2]<<1;
+			np->logic3[0] = np->logic3[0]<<1U;
+			np->logic3[1] = np->logic3[1]<<1U;
+			np->logic3[2] = np->logic3[2]<<1U;
 			switch (logic){
 				case '0':
 					//  Nothing to do here; already set to 
