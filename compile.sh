@@ -1,1 +1,1 @@
-gcc -o simulator readckt.cpp -lstdc++
+gcc -Wno-format -o simulator readckt.cpp -lstdc++
