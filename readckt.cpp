@@ -98,6 +98,7 @@ typedef struct n_struc {
    vector<int> upNodes;
    vector<int> downNodes;
    int level;                 /* level of the gate output */
+   bool logic;
    unsigned int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
    unsigned int fmask_AND; 	//  Fault Mask, AND
    unsigned int fmask_OR;	//  Fault Mask, OR
