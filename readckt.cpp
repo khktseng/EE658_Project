@@ -98,6 +98,7 @@ typedef struct n_struc {
    vector<int> upNodes;
    vector<int> downNodes;
    int level;                 /* level of the gate output */
+   bool logic;
    unsigned int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
    unsigned int fmask_AND; 	//  Fault Mask, AND
    unsigned int fmask_OR;	//  Fault Mask, OR
@@ -192,11 +193,11 @@ char curFile[MAXNAME];			/* Name of current parsed file */
 
 int dfs_count = 1;
 vector<NSTRUC> NodeV;
-vector<NSTRUC> PI_Nodes;
-vector<NSTRUC> PO_Nodes;
+vector<int> PI_Nodes;
+vector<int> PO_Nodes;
 vector<int> index2ref;
 vector<int> ref2index;
-vector<int> nodeQueue;
+//vector<int> nodeQueue;
 map<int, vector<int> > dfs_fault_list;
 map<int, int> fault_vals, previous_logic;
 vector<int> PI_list, final;
@@ -770,12 +771,12 @@ void single_dfs(vector<NSTRUC>::iterator np)
 	FILE *fptr;
 	vector<int> output, output1, output2;
 	vector<int>::iterator it;
-	vector<NSTRUC>::iterator nstr_it;
+	vector<int>::iterator nstr_it;
 	char readFile[MAXLINE];
 	NSTRUC *inNode, *ptr1, *ptr2;
 	for(;np!= NodeV.end(); np++)
 	{
-		switch (np->type){
+		switch (np->gateType){
 			case IPT:
 				output.clear();
 				output.push_back(np->ref);
@@ -838,12 +839,12 @@ void single_dfs(vector<NSTRUC>::iterator np)
 				fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
 				break;
 			default:
-				printf("Node type %d not recognized\n",np->type);
+				printf("Node type %d not recognized\n",np->gateType);
 		}
 	}
 	for(nstr_it = PO_Nodes.begin(); nstr_it!= PO_Nodes.end(); nstr_it++)
 	{
-		for(it = dfs_fault_list[nstr_it->ref].begin(); it != dfs_fault_list[nstr_it->ref].end(); it++){
+		for(it = dfs_fault_list[*nstr_it].begin(); it != dfs_fault_list[*nstr_it].end(); it++){
 			if(std::find(final.begin(), final.end(), *it) == final.end())
 			{
 				final.push_back(*it);
@@ -1035,14 +1036,14 @@ void dfs_logicSim(char *cp, int i)
 		//  Find the node for given PI
 		np = &NodeV[ref2index[PI_list[j]]];
 		//  Check if this is actually a PI
-		if(np->type!=IPT){
+		if(np->gateType!=IPT){
 			printf("Node %d is not a PI\n",PI_list[j]);
 			return;
 		}
 		//  Update logic of PI
 		np->logic = int_inputPatterns[i][j];
 		//  Add these PI's to the queue to simulate logic
-		nodeQueue.push_back(PI_list[j]); 
+		nodeQueue.push_back(make_pair(np->level,PI_list[j])); 
    	}
 	levelizeNodes();
 	processNodeQueue();
