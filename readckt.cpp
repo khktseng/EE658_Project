@@ -90,7 +90,7 @@ typedef struct n_struc {
    int indx;             /* node index(from 0 to NumOfLine - 1 */
    int ref;              /* line number(May be different from indx */
    enum e_gateType gateType;         /* gate type */
-   enum e_nodeType nodeType;         /* gate type */
+   enum e_nodeType nodeType;         /* node type */
    int fin;              /* number of fanins */
    int fout;             /* number of fanouts */
    vector<int> upNodes;
@@ -1047,7 +1047,7 @@ void rfl(char *cp)
 	}
    
 	for(np = NodeV.begin(); np!= NodeV.end(); np++){
-		if(np->type == 0){
+		if(np->gateType == 0){
 			fprintf(fptr, "%d@0\n", np->indx+1);
 			fprintf(fptr, "%d@1\n", np->indx+1);
 		}
