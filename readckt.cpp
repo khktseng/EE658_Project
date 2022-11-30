@@ -505,6 +505,7 @@ void multi_dfs(char *cp){
 	inputPatterns.clear();
 	int_inputPatterns.clear();
 	vector<int>::iterator it;
+	vector<int> u, v;
 	std::map<int, vector<int> >::iterator itr;
 	vector<string>::iterator s;
 	vector<NSTRUC>::iterator np, ns = NodeV.begin();
@@ -518,7 +519,6 @@ void multi_dfs(char *cp){
 	dfs_count = 1;
 	final.clear();
 	sscanf(cp, "%s %s", readFile, writeFile);
-	
 	readTestPatterns(readFile);
 	for(i = 0; i < int_inputPatterns.size(); i++)
 	{
@@ -564,46 +564,58 @@ void multi_dfs(char *cp){
 
 void helper_dfs(int c, int i, int val){
 	NSTRUC *inNode;
+	vector<NSTRUC>::iterator nstr;
 	int flag = 0, j, ind;
-	vector<int> output, output1;
-	vector<int>::iterator it;
+	vector<int> output1, output2, output3, output, c_list, n_list;
+	vector<int>::iterator it, out;
+	map<int, vector<int> >::iterator itr;
 	output.clear();
 	output1.clear();
+	output2.clear();
+	c_list.clear();
+	n_list.clear();
 	NSTRUC *np = &NodeV[ref2index[val]];
-	inNode = &NodeV[ref2index[np->upNodes[0]]];
-	int prev_logic = inNode->logic;
-	for(ind = 0; ind < dfs_fault_list[inNode->ref].size(); ind++)
-		output1.push_back(dfs_fault_list[inNode->ref][ind]);
 	for(j = 0; j < np->fin; j++){
-		output.clear(); 
 		inNode = &NodeV[ref2index[np->upNodes[j]]];
-		if(prev_logic == c && inNode->logic != c){
-			flag = 1;
-			std::set_difference(output1.begin(),output1.end(), dfs_fault_list[inNode->ref].begin(),dfs_fault_list[inNode->ref].end(), std::inserter(output, output.begin()));
-		}
-		else if(prev_logic != c && inNode->logic == c){
-			flag = 1;
-			std::set_difference(dfs_fault_list[inNode->ref].begin(),dfs_fault_list[inNode->ref].end(), output1.begin(), output1.end(), std::inserter(output, output.begin()));
-		}
-		else if(prev_logic != c && inNode->logic != c){
-			std::set_union(output1.begin(), output1.end(), dfs_fault_list[inNode->ref].begin(),dfs_fault_list[inNode->ref].end(), std::inserter(output, output.begin()));
-		}
+		if(inNode->logic == c){
+			c_list.push_back(inNode->ref);
+			if(c_list.size() == 1){
+				for(it = dfs_fault_list[inNode->ref].begin(); it != dfs_fault_list[inNode->ref].end(); it++){
+					output1.push_back(*it);
+				}
+			}
+		} 
 		else{
-			flag = 1;
-			std::set_intersection(output1.begin(),output1.end(), dfs_fault_list[inNode->ref].begin(),dfs_fault_list[inNode->ref].end(), std::inserter(output, output.begin()));
+			n_list.push_back(inNode->ref);
+			if(n_list.size() == 1){
+				for(it = dfs_fault_list[inNode->ref].begin(); it != dfs_fault_list[inNode->ref].end(); it++){
+					output2.push_back(*it);
+				}
+			}
 		}
-		copy(output.begin(), output.end(), std::inserter(output1, output1.begin()));
-		prev_logic = inNode->logic;
 	}
-	output.push_back(np->ref);
-	dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
-	if(flag == 0){
-		fault_vals.insert(pair<int, int>(np->ref, (c ^ i)));
+	
+	for(j = 0; j < c_list.size(); j++){
+		std::set_intersection(output1.begin(),output1.end(), dfs_fault_list[c_list[j]].begin(),dfs_fault_list[c_list[j]].end(), std::inserter(output3 ,output3.begin()));
+		output1.clear();
+		copy(output3.begin(), output3.end(), std::inserter(output1, output1.begin()));
+		output3.clear();
 	}
-	else{
+	for(j = 0; j < n_list.size(); j++){
+		std::set_union(output2.begin(),output2.end(), dfs_fault_list[n_list[j]].begin(),dfs_fault_list[n_list[j]].end(), std::inserter(output2 ,output2.begin()));
+	}
+	if(c_list.size() > 0){
+		std::set_difference(output1.begin(),output1.end(), output2.begin(), output2.end(), std::inserter(output, output.begin()));
 		fault_vals.insert(pair<int, int>(np->ref, (c ^ (1-i))));
 	}
+	else{
+		copy(output2.begin(), output2.end(), std::inserter(output, output.begin()));
+		fault_vals.insert(pair<int, int>(np->ref, (c ^ i)));
+	}
+	output.push_back(np->ref);
+	dfs_fault_list.insert(pair<int, vector<int> >(np->ref, output));
 }
+
 void single_dfs(int val)
 {
 	int c, i, j, ind;
