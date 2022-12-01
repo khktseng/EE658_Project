@@ -195,7 +195,6 @@ int dfs_count = 1;
 vector<NSTRUC> NodeV;
 vector<NSTRUC> PI_Nodes;
 vector<NSTRUC> PO_Nodes;
-vector<NSTRUC> PI_list;
 vector<int> index2ref;
 vector<int> ref2index;
 //vector<int> nodeQueue;
@@ -205,7 +204,7 @@ vector<int> final, prevLogic;
 vector<string> file_output;
 vector<vector<char> > inputPatterns;
 vector<vector<int> > int_inputPatterns;
-vector<int> reVisit;
+vector<int> reVisit, PI_list;
 
 int maxLevels;
 
