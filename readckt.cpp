@@ -38,6 +38,16 @@
 #include <string.h>
 #include <stdint.h>
 #include <vector>
+#include <algorithm>
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <sstream>
+#include <stdlib.h>     
+#include <time.h>  
+#include <set>
+#include <map>
+
 
 using namespace std;
 
@@ -77,6 +87,7 @@ typedef struct n_struc {
    unsigned indx;             /* node index(from 0 to NumOfLine - 1 */
    unsigned ref;              /* line number(May be different from indx */
    enum e_gtype type;         /* gate type */
+   enum e_ntype ntype;  
    unsigned fin;              /* number of fanins */
    unsigned fout;             /* number of fanouts */
    std::vector<int> upNodes;
@@ -94,8 +105,10 @@ void genNodeIndex(void);
 void processNodeQueue(void);
 void processNodeQueue(void);
 void simNode(int );
+void single_dfs(int );
+void dfs_logicSim(char *, int);
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 6
+#define NUMFUNCS 8
 void cread(char *);
 void pc(char *);
 void help(char *);
@@ -103,6 +116,8 @@ void quit(char *);
 void lev(char *);
 void logicSim(char *);
 void logicInit(void);
+void rfl(char *);
+void multi_dfs(char*);
 struct cmdstruc command[NUMFUNCS] = {
 	{"READ", cread, EXEC},
 	{"PC", pc, CKTLD},
@@ -110,6 +125,8 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"QUIT", quit, EXEC},
 	{"LEV", lev, CKTLD},
 	{"LOGICSIM", logicSim, CKTLD},
+	{"RFL", rfl, CKTLD},
+	{"DFS", multi_dfs, CKTLD},
 };
 
 /*----------------Global Variables-----------------------------------------*/
@@ -121,12 +138,19 @@ int Ngates;
 int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
 char curFile[MAXNAME];			/* Name of current parsed file */
+int dfs_count = 1;
 std::vector<NSTRUC> NodeV;
 std::vector<NSTRUC> PI_Nodes;
 std::vector<NSTRUC> PO_Nodes;
 std::vector<int> index2ref;
 std::vector<int> ref2index;
 std::vector<int> nodeQueue;
+std::map<int, vector<int> > dfs_fault_list;
+std::map<int, int> fault_vals, previous_logic;
+vector<int> PI_list, final, prevLogic, reVisit;
+vector<vector<char> > inputPatterns;
+vector<vector<int> > int_inputPatterns;
+
 int maxLevels;
 /*------------------------------------------------------------------------*/
 
@@ -171,12 +195,9 @@ int main()
    }
 }
 
-
-
 void logicSim(char *cp)
 {
 	std::vector<NSTRUC>::iterator printnode, outitr;
-
 	//  Read File
 	FILE *fptr;
 	char readFile[MAXLINE];
@@ -223,16 +244,13 @@ void logicSim(char *cp)
 	
 	//  Levelize Nodes
 	levelizeNodes();
-
 	
 	//  Simulate logic
 	processNodeQueue();
-
 	
 	
 	//  Print Confirmation
 	printf("==> OK\n");
-
 	// Write to output file
     outitr = PO_Nodes.begin();
 	if((fptr = fopen(writeFile,"w")) == NULL) {
@@ -251,6 +269,33 @@ void logicSim(char *cp)
 	}
    fclose(fptr);
 	
+}
+
+void dfs_logicSim(char *cp, int i)
+{
+	std::vector<NSTRUC>::iterator printnode, outitr;
+	vector<vector<char> >::iterator ch;
+	FILE *fptr;
+	int j;
+	vector<int>::iterator inp_cnt;
+	NSTRUC *np;
+	inp_cnt = PI_list.begin();
+	for(j = 0; j < int_inputPatterns[i].size(); j++){
+		//  Find the node for given PI
+		np = &NodeV[ref2index[PI_list[j]]];
+		//  Check if this is actually a PI
+		if(np->type!=IPT){
+			printf("Node %d is not a PI\n",PI_list[j]);
+			return;
+		}
+		//  Update logic of PI
+		np->logic = int_inputPatterns[i][j];
+		//  Add these PI's to the queue to simulate logic
+		nodeQueue.push_back(PI_list[j]); 
+   	}
+	levelizeNodes();
+	processNodeQueue();
+	printf("==> OK\n");
 }
 void processNodeQueue(void){
 	//  Function to process all of the nodes in the queue
@@ -282,7 +327,6 @@ void processNodeQueue(void){
 		curLevel++;
 		
 	}
-	
 }
 
 void simNode(int nodeRef){
@@ -393,14 +437,316 @@ void simNode(int nodeRef){
 			break;
 		default:
 			printf("Node type %d not recognized\n",np->type);
+	}		
+}
+
+bool readTestPatterns(char *patternFile){
+	fstream fptrIn;
+	string lineStr;
+	fptrIn.open(patternFile, ios::in);
+	char foo;
+	int temp;
+	vector<char> tempPattern;
+	
+	if(!fptrIn.is_open()){
+		printf("File %s cannot be read!\n", patternFile);
+		return false;
 	}
-		
+	PI_list.clear();
+	inputPatterns.clear();
+	int_inputPatterns.clear();
+	bool firstLine = true;
+	while(getline(fptrIn, lineStr)){
+		if(firstLine){
+			stringstream ss(lineStr);
+			while(ss>>temp){ 
+				PI_list.push_back(temp);
+				ss>>foo;
+			}
+			firstLine = false;
+		}else{
+			tempPattern.clear();
+			int i = 0;
+			while(i<lineStr.size()){
+				tempPattern.push_back(lineStr[i]);
+				i=i+2;
+			}
+			inputPatterns.push_back(tempPattern);			
+		}
+	}
+	fptrIn.close();
+	for(int j=0; j<inputPatterns.size();j++){
+		int_inputPatterns.push_back(std::vector<int>());
+		for(int k=0; k<inputPatterns[j].size(); k++){
+			int_inputPatterns[j].push_back(int(inputPatterns[j][k])-48);
+		}
+	}
+	for(int j=0;j<PI_list.size();j++){
+		if(PI_list[j]>(ref2index.size()-1)){
+			printf("\nWarning, input file %s contains inputs exceeding range\n", patternFile);
+			return false;
+		}
+		if(NodeV[ref2index[PI_list[j]]].type != IPT){
+			printf("\nWarning, input file %s contains inputs that are not PI\n", patternFile);
+			return false;
+		}
+	}
+	for(int j=0;j<inputPatterns.size();j++){
+		if(inputPatterns[j].size()!=PI_list.size()){
+			printf("\nWarning, input file %s test pattern size does not match PI size",patternFile);
+			return false;
+		}
+	}
+	return true;
+}
+
+void multi_dfs(char *cp){
+	dfs_fault_list.clear();
+	fault_vals.clear();
+	inputPatterns.clear();
+	int_inputPatterns.clear();
+	vector<int>::iterator it;
+	vector<int> u, v;
+	std::map<int, vector<int> >::iterator itr;
+	vector<string>::iterator s;
+	vector<NSTRUC>::iterator np, ns = NodeV.begin();
+	char readFile[MAXLINE];
+	char writeFile[MAXLINE];
+	int i, j = 1, max = 0;
+	vector<char>::iterator ch;
+	fstream file;;
+	NSTRUC *inNode;
+	bool run_again = false;
+	dfs_count = 1;
+	final.clear();
+	sscanf(cp, "%s %s", readFile, writeFile);
+	readTestPatterns(readFile);
+	for(np = NodeV.begin(); np!= NodeV.end(); np++){
+			if(np->ref > max){
+				max = np->ref;
+		}
+	}
+	for(i = 0; i < int_inputPatterns.size(); i++)
+	{
+		dfs_logicSim(cp, i);
+		if(dfs_count == 1){
+			for(np = NodeV.begin(); np != NodeV.end(); np++){
+				prevLogic.push_back(np->logic);
+				single_dfs(np->ref);
+			}
+		}
+		else{
+			int x = 0;
+			for(np = NodeV.begin(); np != NodeV.end(); np++){
+				if(np->logic != prevLogic[x]){
+					dfs_fault_list.erase(np->ref);
+					for(int k = 0; k < np->fin; k++){
+						dfs_fault_list.erase(np->upNodes[k]);
+						single_dfs(np->upNodes[k]);
+					}
+					single_dfs(np->ref);
+				}
+			}
+			x++;
+		}
+		dfs_count++;
+		for(np = PO_Nodes.begin(); np!= PO_Nodes.end(); np++)
+		{
+			for(it = dfs_fault_list[np->ref].begin(); it != dfs_fault_list[np->ref].end(); it++){
+				if(*it > 0 && *it <= max){
+					if(std::find(final.begin(), final.end(), *it) == final.end())
+					{
+						final.push_back(*it);
+					}
+				}
+			}
+		}
+	}
+	file.open(writeFile, ios_base::out);
+    if(!file.is_open())
+    {
+        cout<<"Unable to open the file.\n";
+        return;
+	}
+	for(it = final.begin(); it != final.end(); it++)
+	{
+		file<<*it<<"@"<<fault_vals[*it]<<"\n";
+	}
+}
+
+void helper_dfs(int c, int i, int val){
+	NSTRUC *inNode;
+	vector<NSTRUC>::iterator nstr;
+	int flag = 0, j, ind;
+	vector<int> output1, output2, output3, output, c_list, n_list;
+	vector<int>::iterator it, out;
+	map<int, vector<int> >::iterator itr;
+	output.clear();
+	output1.clear();
+	output2.clear();
+	c_list.clear();
+	n_list.clear();
+	NSTRUC *np = &NodeV[ref2index[val]];
+	for(j = 0; j < np->fin; j++){
+		inNode = &NodeV[ref2index[np->upNodes[j]]];
+		if(inNode->logic == c){
+			c_list.push_back(inNode->ref);
+			if(c_list.size() == 1){
+				for(it = dfs_fault_list[inNode->ref].begin(); it != dfs_fault_list[inNode->ref].end(); it++){
+					output1.push_back(*it);
+				}
+			}
+		} 
+		else{
+			n_list.push_back(inNode->ref);
+			if(n_list.size() == 1){
+				for(it = dfs_fault_list[inNode->ref].begin(); it != dfs_fault_list[inNode->ref].end(); it++){
+					output2.push_back(*it);
+				}
+			}
+		}
+	}
+	
+	for(j = 0; j < c_list.size(); j++){
+		std::set_intersection(output1.begin(),output1.end(), dfs_fault_list[c_list[j]].begin(),dfs_fault_list[c_list[j]].end(), std::inserter(output3 ,output3.begin()));
+		output1.clear();
+		copy(output3.begin(), output3.end(), std::inserter(output1, output1.begin()));
+		output3.clear();
+	}
+	for(j = 0; j < n_list.size(); j++){
+		std::set_union(output2.begin(),output2.end(), dfs_fault_list[n_list[j]].begin(),dfs_fault_list[n_list[j]].end(), std::inserter(output2 ,output2.begin()));
+	}
+	if(c_list.size() > 0){
+		std::set_difference(output1.begin(),output1.end(), output2.begin(), output2.end(), std::inserter(output, output.begin()));
+		fault_vals.insert(pair<int, int>(np->ref, (c ^ (1-i))));
+	}
+	else{
+		copy(output2.begin(), output2.end(), std::inserter(output, output.begin()));
+		fault_vals.insert(pair<int, int>(np->ref, (c ^ i)));
+	}
+	output.push_back(np->ref);
+	dfs_fault_list.insert(pair<int, vector<int> >(np->ref, output));
+}
+
+void single_dfs(int val)
+{
+	int c, i, j, ind;
+	std::map<int, vector<int> >::iterator itr;
+	FILE *fptr;
+	vector<int> output, output1, output2;
+	vector<int>::iterator it;
+	vector<NSTRUC>::iterator nstr_it;
+	char readFile[MAXLINE];
+	NSTRUC *np, *inNode, *ptr1, *ptr2;
+	np = &NodeV[ref2index[val]];
+	for(i = 0; i < np->fin; i++){
+		if(dfs_count == 1){
+			if(dfs_fault_list.find(np->upNodes[i]) == dfs_fault_list.end()){
+				reVisit.push_back(np->upNodes[i]);
+				single_dfs(np->upNodes[i]);
+			}
+		}	
+	}
+	switch (np->type){
+		case IPT:
+			output.clear();
+			output.push_back(np->ref);
+			dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
+			fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
+			break;
+		case BRCH:
+			output.clear();
+			for(j = 0; j < np->fin; j++){
+				inNode = &NodeV[ref2index[np->upNodes[j]]];
+				for(ind = 0; ind < dfs_fault_list[inNode->ref].size(); ind++)
+					output.push_back(dfs_fault_list[inNode->ref][ind]);
+			}
+			output.push_back(np->ref);
+			dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
+			fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
+			break;
+		case OR:
+			c = 1;
+			i = 0;
+			helper_dfs(c, i, val);
+			break;
+		case NOR:
+			c = 1;
+			i = 1;
+			helper_dfs(c, i, val);
+			break;
+		case AND:
+			c = 0;
+			i = 0;
+			helper_dfs(c, i, val);
+			break;
+		case NAND:
+			c = 0;
+			i = 1;
+			helper_dfs(c, i, val);
+			break;
+		case NOT:
+			output.clear();
+			for(j = 0; j < np->fin; j++){
+				inNode = &NodeV[ref2index[np->upNodes[j]]];
+				for(ind = 0; ind < dfs_fault_list[inNode->ref].size(); ind++)
+					output.push_back(dfs_fault_list[inNode->ref][ind]);
+			}
+			output.push_back(np->ref);
+			dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
+			fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
+			break;
+		case XOR:
+			output.clear();
+			output1.clear();
+			output2.clear();
+			ptr1 = &NodeV[ref2index[np->upNodes[0]]];
+			ptr2 = &NodeV[ref2index[np->upNodes[1]]];
+			if(ptr1->logic == ptr2->logic){
+				std::set_union(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output1, output1.begin()));
+				std::set_intersection(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output2, output2.begin()));
+				std::set_difference(output1.begin(),output1.end(), output2.begin(), output2.end(), std::inserter(output, output.begin()));
+			}
+			else{
+				std::set_union(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output, output.begin()));
+			}
+			output.push_back(np->ref);
+			dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
+			fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
+			break;
+		default:
+			printf("Node type %d not recognized\n",np->type);
+	}
 	
 }
-	
-
-
-
+void rfl(char *cp)
+{
+	std::vector<NSTRUC>::iterator np;
+	int checkpoints = Npi;
+	int j;
+	FILE *fptr;
+	char writeFile[MAXLINE];
+	sscanf(cp, "%s", writeFile);
+	if((fptr = fopen(writeFile,"w")) == NULL) {
+		printf("File %s cannot be read!\n", writeFile);
+		return;
+	}
+   
+	for(np = NodeV.begin(); np!= NodeV.end(); np++){
+		if(np->type == 0){
+			fprintf(fptr, "%d@0\n", np->indx+1);
+			fprintf(fptr, "%d@1\n", np->indx+1);
+		}
+		for(j = 0; j<np->fout; j++){
+			if(np->fout > 1)
+			{
+				fprintf(fptr,"%d@0\n",np->downNodes[j]);
+				fprintf(fptr,"%d@1\n",np->downNodes[j]);
+			}
+		}
+	}
+	fclose(fptr);
+}
 /*-----------------------------------------------------------------------
 input: circuit description file name
 output: nothing
