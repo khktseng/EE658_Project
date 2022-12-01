@@ -205,6 +205,7 @@ vector<int> final, prevLogic;
 vector<string> file_output;
 vector<vector<char> > inputPatterns;
 vector<vector<int> > int_inputPatterns;
+vector<int> reVisit;
 
 int maxLevels;
 
@@ -680,7 +681,7 @@ void multi_dfs(char *cp){
 	vector<NSTRUC>::iterator np, ns = NodeV.begin();
 	char readFile[MAXLINE];
 	char writeFile[MAXLINE];
-	int i, j = 1;
+	int i, j = 1, max = 0;
 	vector<char>::iterator ch;
 	fstream file;;
 	NSTRUC *inNode;
@@ -689,6 +690,11 @@ void multi_dfs(char *cp){
 	final.clear();
 	sscanf(cp, "%s %s", readFile, writeFile);
 	readTestPatterns(readFile);
+	for(np = NodeV.begin(); np!= NodeV.end(); np++){
+			if(np->ref > max){
+				max = np->ref;
+		}
+	}
 	for(i = 0; i < int_inputPatterns.size(); i++)
 	{
 		dfs_logicSim(cp, i);
@@ -696,13 +702,17 @@ void multi_dfs(char *cp){
 			for(np = NodeV.begin(); np != NodeV.end(); np++){
 				prevLogic.push_back(np->logic);
 				single_dfs(np->ref);
-				
 			}
 		}
 		else{
 			int x = 0;
 			for(np = NodeV.begin(); np != NodeV.end(); np++){
 				if(np->logic != prevLogic[x]){
+					dfs_fault_list.erase(np->ref);
+					for(int k = 0; k < np->fin; k++){
+						dfs_fault_list.erase(np->upNodes[k]);
+						single_dfs(np->upNodes[k]);
+					}
 					single_dfs(np->ref);
 				}
 			}
@@ -712,9 +722,11 @@ void multi_dfs(char *cp){
 		for(np = PO_Nodes.begin(); np!= PO_Nodes.end(); np++)
 		{
 			for(it = dfs_fault_list[np->ref].begin(); it != dfs_fault_list[np->ref].end(); it++){
-				if(std::find(final.begin(), final.end(), *it) == final.end())
-				{
-					final.push_back(*it);
+				if(*it > 0 && *it <= max){
+					if(std::find(final.begin(), final.end(), *it) == final.end())
+					{
+						final.push_back(*it);
+					}
 				}
 			}
 		}
@@ -730,7 +742,6 @@ void multi_dfs(char *cp){
 		file<<*it<<"@"<<fault_vals[*it]<<"\n";
 	}
 }
-
 void helper_dfs(int c, int i, int val){
 	NSTRUC *inNode;
 	vector<NSTRUC>::iterator nstr;
@@ -792,12 +803,18 @@ void single_dfs(int val)
 	FILE *fptr;
 	vector<int> output, output1, output2;
 	vector<int>::iterator it;
-	vector<int>::iterator nstr_it;
+	vector<NSTRUC>::iterator nstr_it;
 	char readFile[MAXLINE];
-
 	NSTRUC *np, *inNode, *ptr1, *ptr2;
-  	np = &NodeV[ref2index[val]];
-
+	np = &NodeV[ref2index[val]];
+	for(i = 0; i < np->fin; i++){
+		if(dfs_count == 1){
+			if(dfs_fault_list.find(np->upNodes[i]) == dfs_fault_list.end()){
+				reVisit.push_back(np->upNodes[i]);
+				single_dfs(np->upNodes[i]);
+			}
+		}	
+	}
 	switch (np->gateType){
 		case IPT:
 			output.clear();
@@ -849,13 +866,18 @@ void single_dfs(int val)
 			break;
 		case XOR:
 			output.clear();
+			output1.clear();
+			output2.clear();
 			ptr1 = &NodeV[ref2index[np->upNodes[0]]];
 			ptr2 = &NodeV[ref2index[np->upNodes[1]]];
-			
-			std::set_union(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output1, output1.begin()));
-			std::set_intersection(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output2, output2.begin()));
-			std::set_difference(output1.begin(),output1.end(), output2.begin(), output2.end(), std::inserter(output, output.begin()));
-			
+			if(ptr1->logic == ptr2->logic){
+				std::set_union(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output1, output1.begin()));
+				std::set_intersection(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output2, output2.begin()));
+				std::set_difference(output1.begin(),output1.end(), output2.begin(), output2.end(), std::inserter(output, output.begin()));
+			}
+			else{
+				std::set_union(dfs_fault_list[ptr1->ref].begin(),dfs_fault_list[ptr1->ref].end(), dfs_fault_list[ptr2->ref].begin(),dfs_fault_list[ptr2->ref].end(), std::inserter(output, output.begin()));
+			}
 			output.push_back(np->ref);
 			dfs_fault_list.insert(pair<int,vector<int> >(np->ref, output));
 			fault_vals.insert(pair<int, int>(np->ref, (1-np->logic)));
@@ -863,6 +885,7 @@ void single_dfs(int val)
 		default:
 			printf("Node type %d not recognized\n",np->gateType);
 	}
+	
 }
 
 void parallelLogicSimulation(void){
