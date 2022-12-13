@@ -4,7 +4,7 @@
 #include "Circuit.h"
 
 Circuit::Circuit(string filename) {
-    ifstream cktFile(filename, ios::in);
+    ifstream cktFile(filename.c_str());
 
     vector<cktNode*> nodeList;
 
