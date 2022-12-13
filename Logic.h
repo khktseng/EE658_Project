@@ -1,11 +1,12 @@
 /* enum for logic and overloaded operators
 */
+#ifndef LOGIC_H
+#define LOGIC_H
 
 #include "defines.h"
 
 // logic enum
-typedef enum e_logic {
-    X = -1,
+typedef enum e_logic : unsigned long{
     ZERO = 0,
     ONE,
     D,
@@ -35,9 +36,6 @@ inline LOGIC operator&(LOGIC const &a, LOGIC const &b) {
 
 inline ostream &operator<<(ostream &str, LOGIC l) {
     switch(l) {
-        case X:
-            str << "X";
-            break;
         case ZERO:
             str << "0";
             break;
@@ -54,3 +52,8 @@ inline ostream &operator<<(ostream &str, LOGIC l) {
 
     return str;
 }
+
+typedef map<int, LOGIC> inputMap;
+typedef vector<inputMap*> inputList;
+
+#endif

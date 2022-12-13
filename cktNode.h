@@ -20,6 +20,7 @@ class cktNode {
         bool linked;
 
         //mutable through public functions
+        bool initialized;
         LOGIC value;
         bool stuckAt;
         LOGIC stuckAtValue;
@@ -44,7 +45,7 @@ class cktNode {
 
         void setLevel(int l) {level = l;};
         void setValue(LOGIC v) {assert(nodeType==PI); value=v;};
-        void setStuckAt(LOGIC sav) {stuckAt = true; stuckAtValue = sav;}
+        void setFault(int sav);
         void removeStuckAt() {stuckAt = false;}
 
         bool evaluate();    //true if value changed

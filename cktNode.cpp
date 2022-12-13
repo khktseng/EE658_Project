@@ -14,8 +14,9 @@ cktNode::cktNode(int id, int ln, gateT gt, nodeT nt, int fis, int fos, vector<in
     numFanOuts = fos;
     upstreamIDs = usIDs;
     level = -1;
-    value = X;
 
+    stuckAt = false;
+    initialized= false;
     linked = false;
 }
 
@@ -31,6 +32,16 @@ void cktNode::link(cktMap *nodes) {
     }
 
     linked = true;
+}
+
+
+void cktNode::setFault(int sav) {
+    stuckAt = true;
+    if (sav) {
+        stuckAtValue = D;
+    } else {
+        stuckAtValue = DB;
+    }
 }
 
 bool cktNode::evaluate() {
@@ -67,7 +78,7 @@ bool cktNode::evaluate() {
         }
     }
 
-    if (newValue = this->value) {
+    if (!initialized || newValue != this->value) {
         this->value = newValue;
         return true;
     }
@@ -75,6 +86,6 @@ bool cktNode::evaluate() {
 }
 
 void cktNode::reset() {
-    value = X;
+    initialized = false;
     stuckAt = false;
 }
