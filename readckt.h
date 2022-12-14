@@ -3,8 +3,8 @@
 
 #include "includes.h"
 #include "structures.h"
-#include "Circuit.h"
-#include "cktNode.h"
+//#include "Circuit.h"
+//#include "cktNode.h"
 
 #define NUMFUNCS 12
 #define MAXLINE 100               /* Input buffer size */

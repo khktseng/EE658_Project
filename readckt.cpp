@@ -365,10 +365,10 @@ bool setup_Dalg(void){
 	np = getNodePtr(faultyNode_Dalg);
 	if(stuckAt_Dalg){
 		//  Normally 0, stuck at 1.  Dbar = 0/1
-		np->logic5 = Dbar;
+		np->logic5 = dbar;
 	}else{
 		//  Normally 1, stuck at 0.  D = 1/0
-		np->logic5 = D;
+		np->logic5 = d;
 	}
 	
 	//  To start process, add this node to the queue
@@ -599,7 +599,7 @@ int propogate_Jfrontier_Dalg(int nodeRef, int gateRef){
 		gateToSet = -1;
 		for(int i=0;i<np->upNodes.size();++i){
 			npUp = getNodePtr(np->upNodes[i]);
-			if(npUp->logic5 == X){
+			if(npUp->logic5 == x){
 					gateToSet = i;
 					break;
 			}
@@ -658,7 +658,7 @@ void propogate_Dfrontier_Dalg(int nodeRef, bool XOR_version){
 	//  Find each "X" value in the upstream nodes
 	for(int k=0;k<np->upNodes.size();++k){
 		npUp = getNodePtr(np->upNodes[k]);
-		if(npUp->logic5==X){
+		if(npUp->logic5==x){
 			switch (np->gateType){
 				case AND:
 				case NAND:
@@ -833,12 +833,12 @@ bool backwardsImply_Dalg(void){
 			//  Gate needs to be evaluated; output changed
 			if(np->ref == faultyNode_Dalg){
 				//  Special handling for faulty node
-				if(newLogic==X){
+				if(newLogic==x){
 					isOK = backward_logic(nodeRef, isJ, inputChangedList);
 				}
 			}else{
 				//  Normal Node
-				if((newLogic==D)||(newLogic==Dbar)){
+				if((newLogic==d)||(newLogic==dbar)){
 					//  Something wrong here; cannot back-propogate D
 					if(debugMode>1){
 						printf("Failure; attempting to back-propogate a D or Dbar\n");
@@ -905,7 +905,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 	//  Determine logic output for this gate
 	//  0 or 1 if it is the faulty node, otherwise the current logic
 	if(np->ref == faultyNode_Dalg){
-		if(np->logic5 == D){
+		if(np->logic5 == d){
 			logEval = one;
 		}else{
 			logEval = zero;
@@ -957,7 +957,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			isJ = false;
 			for(int i=0;i<np->upNodes.size();i++){
 				npUp = getNodePtr(np->upNodes[i]);
-				if(npUp->logic5 == X){
+				if(npUp->logic5 == x){
 					npUp->logic5 = one;
 					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
@@ -972,7 +972,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			isJ = false;
 			for(int i=0;i<np->upNodes.size();i++){
 				npUp = getNodePtr(np->upNodes[i]);
-				if(npUp->logic5 == X){
+				if(npUp->logic5 == x){
 					npUp->logic5 = zero;
 					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
@@ -995,7 +995,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			isJ = false;
 			for(int i=0;i<np->upNodes.size();i++){
 				npUp = getNodePtr(np->upNodes[i]);
-				if(npUp->logic5 == X){
+				if(npUp->logic5 == x){
 					npUp->logic5 = zero;
 					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
@@ -1009,7 +1009,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			isJ = false;
 			for(int i=0;i<np->upNodes.size();i++){
 				npUp = getNodePtr(np->upNodes[i]);
-				if(npUp->logic5 == X){
+				if(npUp->logic5 == x){
 					npUp->logic5 = one;
 					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
@@ -1034,8 +1034,8 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			NSTRUC *np1, *np2;
 			np1 = getNodePtr(np->upNodes[0]);
 			np2 = getNodePtr(np->upNodes[1]);
-			if(np1->logic5==X){
-				if((np2->logic5 == D)||(np2->logic5 == Dbar)){
+			if(np1->logic5==x){
+				if((np2->logic5 == d)||(np2->logic5 == dbar)){
 					//  Cannot backwards-propogate D
 					return false;
 				}
@@ -1049,7 +1049,7 @@ bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 				}
 				inputChangedList.push_back(np1->ref);
 			}else{
-				if((np1->logic5 == D)||(np1->logic5 == Dbar)){
+				if((np1->logic5 == d)||(np1->logic5 == dbar)){
 					//  Cannot backwards-propogate D
 					return false;
 				}
@@ -1147,15 +1147,15 @@ enum e_logicType checkLogic_Dalg(int nodeRef, bool &isOK, bool &isJ, bool &isD){
 		isJ = false;
 		isD = false;
 		
-		if(logSim == X){
+		if(logSim == x){
 			isOK = true;
 			return logSim;
 		}
-		if((logSim==1)&&(logActual==D)){
+		if((logSim==1)&&(logActual==d)){
 			//  Need to assign 1 at this node for D 
 			isOK = true;
-			return D;
-		}else if((logSim==0) && (logActual == Dbar)){
+			return d;
+		}else if((logSim==0) && (logActual == dbar)){
 			//  Need to assign a 0 at this node for Dbar
 			isOK = true;
 			return logSim;
@@ -1168,7 +1168,7 @@ enum e_logicType checkLogic_Dalg(int nodeRef, bool &isOK, bool &isJ, bool &isD){
 	}
 	
 	
-	if((logSim==logActual) || (logSim==X)||(logActual==X)){
+	if((logSim==logActual) || (logSim==x)||(logActual==x)){
 		//  No Problem
 		isOK = true;
 	}else{		
@@ -1185,7 +1185,7 @@ enum e_logicType checkLogic_Dalg(int nodeRef, bool &isOK, bool &isJ, bool &isD){
 	//  Find out if this is a J-frontier
 	//  1 or 0 on output, not fully defined by inputs
 	if((logActual==one)||(logActual==zero)){
-		if(logSim==X){
+		if(logSim==x){
 			isJ = true;
 			isD = false;
 			return logSim;
@@ -1198,10 +1198,10 @@ enum e_logicType checkLogic_Dalg(int nodeRef, bool &isOK, bool &isJ, bool &isD){
 	
 	//  Find out if this is a D-Frontier
 	//  One or more inputs are D and output is X
-	if(logSim==X){
+	if(logSim==x){
 		isD = false;
 		for(int i=0;i<inArr.size();i++){
-			if((inArr[i]==D)||(inArr[i]==Dbar)){
+			if((inArr[i]==d)||(inArr[i]==dbar)){
 				isD = true;
 				break;
 			}
@@ -1224,7 +1224,7 @@ void branchPropogate_Dalg(int ref_B,enum e_logicType setLogic,  int origin){
 	//  Assign logic
 	//  Special condition for the faulty node
 	if(np->ref == faultyNode_Dalg){
-		if(np->logic5 == D){
+		if(np->logic5 == d){
 			setLogic = one;
 		}else{
 			setLogic = zero;
@@ -1333,7 +1333,7 @@ int faultAtPO_Dalg(void){
 	
 	for(int i=0;i<PO_Nodes.size();++i){
 		np = getNodePtr(PO_Nodes[i]);
-		if((np->logic5 == D)||(np->logic5 == Dbar)){
+		if((np->logic5 == d)||(np->logic5 == dbar)){
 			return np->ref;
 		}
 	}
@@ -1349,7 +1349,7 @@ int nInputsX_Dalg(int nodeRef){
 	int nX = 0;
 	for(int i=0;i<np->upNodes.size();i++){
 		npUp = getNodePtr(np->upNodes[i]);
-		if(npUp->logic5==X){
+		if(npUp->logic5==x){
 			++nX;
 		}
 	}
@@ -1361,7 +1361,7 @@ void resetNodes_Dalg(void){
 	NSTRUC *np;
 	for(int i = 0;i<NodeV.size();i++){
 		np = &NodeV[i];
-		np->logic5 = X;
+		np->logic5 = x;
 	}
 }
 
@@ -2654,7 +2654,7 @@ void cread(char *cp)
 		tempNode.logic3[1] = ~0u;//  Set to all 1's
 		tempNode.logic3[2] = 0u;
 		tempNode.logic = false;
-		tempNode.logic5 = X;
+		tempNode.logic5 = x;
 		tempNode.indx = index++;
 		tempNode.nodeType = nodeType;
 
