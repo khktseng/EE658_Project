@@ -72,7 +72,7 @@ Circuit::Circuit(string filename) {
 
     this->numNodes = lineNum ;
     this->maxLevel = 0;
-    initialized = false;
+    this->initialized = false;
     assert(this->numNodes == this->nodes.size());
 }
 
@@ -144,12 +144,14 @@ void Circuit::simulate(inputMap* inputmap) {
         }
     }
 
-    simulate(&toEvaluate, &notEvaluated, 1);
+    cktQ xList;
+    simulate(&toEvaluate, &notEvaluated, 1, &xList);
+    assert(xList.empty());
     initialized = true;
 }
 
 
-void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level) {
+void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dFrontier) {
     if (toEvaluate->size() == 0) {
         return;
     }
@@ -164,10 +166,21 @@ void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level) {
             for (int i = 0; i < currNode->getDownstreamList().size(); i++) {
                 notEvaluated->push(currNode->getDownstreamList()[i]);
             }
+        } else {
+            bool dFront = false;
+            for (int i = 0; i < currNode->getUpstreamList().size(); i++) {
+                if (currNode->getUpstreamList()[i]->getValue() == D
+                    || currNode->getUpstreamList()[i]->getValue() == DB) {
+                        dFront = true;
+                }
+            }
+            if (dFront) {
+                dFrontier->push(currNode);
+            }
         }
     }
 
-    simulate(notEvaluated, toEvaluate, level + 1);
+    simulate(notEvaluated, toEvaluate, level + 1, dFrontier);
 }
 
 
@@ -218,11 +231,32 @@ void Circuit::addFault(Fault* fault) {
     fault->getNode()->setFault(fault->getSAV());
 }
 
+Fault* Circuit::createFault(int nodeID, int sav) {
+    try {
+        if (nodeID > nodes.size()) {
+            throw nodeID;
+        }
+    } catch (int n) {
+        cout << "BadValueException: node " << n << " is out of range\n";
+    }
+
+    try {
+        if (sav > 1 || sav < 0) {
+            throw sav;
+        }
+    } catch (int s) {
+        cout << "BadValueException: stuck at value " << s << " must be 1 or 0\n";
+    }
+
+    return new Fault(nodes[nodeID], sav);
+}
+
 
 double Circuit::faultCoverage(faultList* detectedFaults) {
     double totalFaults = nodes.size() * 2;
     return detectedFaults->size() / ((double)nodes.size() * 2.0);
 }
+
 
 inputMap Circuit::randomTestGen() {
     int numPIs = PInodes.size();
@@ -273,6 +307,153 @@ faultMap Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
     return detectedFaults;
 }
 
+
+void Circuit::backwardsImplication(cktNode* root) {
+    if(!root->imply()) {return;}
+
+    for (int i = 0; i < root->getUpstreamList().size(); i++) {
+        backwardsImplication(root->getUpstreamList()[i]);
+    }
+}
+
+
+OBJECTIVE Circuit::objective(cktQ* dFrontier) {
+    OBJECTIVE obj;
+
+    if (dFrontier->empty()) {
+        return {NULL, X};
+    }
+
+    cktNode* dGate;
+    cktNode* dIn;
+
+    do {
+        dGate = dFrontier->front();
+        dFrontier->pop();
+        dIn = dGate->getUnassignedInput(true);
+    } while (dIn == NULL && !dFrontier->empty());
+    
+    LOGIC objV;
+    switch (dGate->getGateType()) {
+        case XOR:
+            objV = ZERO;
+            break;
+        case XNOR:
+            objV = ONE;
+            break;
+        case OR:
+        case NOR:
+            objV = ZERO;
+            break;
+        case NAND:
+        case AND:
+            objV = ONE;
+            break;
+        default:
+            cout << "objective error\n";
+            break;
+    }
+
+    obj = {dIn, objV};
+    return obj;
+}
+
+
+OBJECTIVE Circuit::backtrace(OBJECTIVE kv) {
+    if (kv.node->tested) {
+        cout << "tested\n";
+        return {NULL, X};
+    }
+    if (kv.node->getNodeType() == PI){
+        return kv;
+    }
+
+    cktNode* nextBack = kv.node->getUnassignedInput(kv.node->needAllInputs(kv.targetValue));
+    if (nextBack == NULL) {
+        return kv;
+    }
+    LOGIC likely = kv.node->getLikely(nextBack, kv.targetValue);
+
+    return backtrace({nextBack, likely});
+}
+
+bool Circuit::faultAtPO() {
+    for (int i = 0; i < POnodes.size(); i++) {
+        if (POnodes[i]->getValue() == D || POnodes[i]->getValue() == DB) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+inputMap Circuit::PODEM(Fault* fault) {
+    this->reset();
+    this->addFault(fault);
+
+    cktQ toEvaluate;
+    cktQ notEvaluated;
+    cktQ dFrontier;
+    cktNode* dNode = fault->getNode();
+
+    for (int i = 0; i < dNode->getDownstreamList().size(); i++) {
+        toEvaluate.push(dNode->getDownstreamList()[i]);
+    }
+    this->simulate(&toEvaluate, &notEvaluated, dNode->getLevel(), &dFrontier);
+    this->backwardsImplication(dNode);
+
+    return podem(fault, &dFrontier);
+}
+
+
+inputMap Circuit::podem(Fault* fault, cktQ* dFrontier) {
+    inputMap testPattern;
+    if (faultAtPO()) {
+        for (int i = 0; i < PInodes.size(); i++) {
+            testPattern[PInodes[i]->getNodeID()] = PInodes[i]->getTrueValue();
+        }
+        return testPattern;
+    }
+    bool xPathCheck = false;
+    for (int i = 0; i < POnodes.size(); i++) {
+        if (POnodes[i]->getValue() == X){
+            xPathCheck = true;
+        }
+    }
+    if (!xPathCheck) {
+        return testPattern;
+    }
+
+    OBJECTIVE obj = objective(dFrontier);
+    if (obj.node == NULL || obj.targetValue == X) {return testPattern;}
+    OBJECTIVE piBacktrace = backtrace(obj);
+
+    cktQ toEvaluate;
+    cktQ notEvaluated;
+    piBacktrace.node->setValue(piBacktrace.targetValue);
+    //cout << piBacktrace.node->getNodeID() << " " << piBacktrace.targetValue << "\n";
+    for (int i = 0; i < piBacktrace.node->getDownstreamList().size(); i++) {
+        toEvaluate.push(piBacktrace.node->getDownstreamList()[i]);
+    }
+    this->simulate(&toEvaluate, &notEvaluated, piBacktrace.node->getLevel(), dFrontier);
+    testPattern = podem(fault, dFrontier);
+    if (!testPattern.empty()) {
+        return testPattern;
+    }
+
+    assert(toEvaluate.empty() && notEvaluated.empty());
+    //assert(updatedDFront.empty());
+
+    piBacktrace.node->setValue(~piBacktrace.targetValue);
+    for (int i = 0; i < piBacktrace.node->getDownstreamList().size(); i++) {
+        toEvaluate.push(piBacktrace.node->getDownstreamList()[i]);
+    }
+    this->simulate(&toEvaluate, &notEvaluated, 1, dFrontier);
+    testPattern = podem(fault, dFrontier);
+    piBacktrace.node->setValue(X);
+    piBacktrace.node->tested = true;
+    return testPattern;
+}
 
 
 

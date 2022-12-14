@@ -8,6 +8,11 @@
 #include "Logic.h"
 #include "Fault.h"
 
+typedef struct objective_s{
+    cktNode* node;
+    LOGIC targetValue;
+} OBJECTIVE;
+
 class Circuit {
     private:
         cktMap nodes;
@@ -23,10 +28,15 @@ class Circuit {
         void levelize(cktNode *currNode, int curr_level);
         void levelize();
         void verifyLink();
-        void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level);
+        void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dFrontier);
         faultList rflCheckpoint();
         faultMap deductiveFaultSim(faultList* fl, inputList* inputs);
         inputMap randomTestGen();
+        inputMap podem(Fault* fault, cktQ* dFrontier);
+        OBJECTIVE objective(cktQ* dFrontier);
+        OBJECTIVE backtrace(OBJECTIVE kv);
+        void backwardsImplication(cktNode* root);
+        bool faultAtPO();
 
     public:
         Circuit(string filename);
@@ -36,10 +46,13 @@ class Circuit {
         LOGIC getNodeLogic(int nodeID);
         faultList generateFaults(bool reduced);
         void addFault(Fault* fault);
+        Fault* createFault(int nodeID, int sav);
         void simulate(map<int, LOGIC> *input);
         void reset();
         double faultCoverage(faultList* detectedFaults);
         inputList randomTestsGen(int numTests);
+
+        inputMap PODEM(Fault* fault);
         
 
 };

@@ -20,22 +20,27 @@ class cktNode {
         bool linked;
 
         //mutable through public functions
-        bool initialized;
         LOGIC value;
         bool stuckAt;
         LOGIC stuckAtValue;
         
+        LOGIC eval(LOGIC a, LOGIC b);
+        bool implyFromOutput(LOGIC xSet);
+        bool implyFromInputs(LOGIC xSet);
+
     public:
+        bool tested;
+
         cktNode(int id, int ln, gateT gt, nodeT nt, int fis, int fos, vector<int> usIDs);
-        int getNodeID() {return nodeID;};
-        int getLineNum() {return lineNum;};
-        gateT getGateType() {return gateType;};
-        nodeT getNodeType() {return nodeType;};
-        int getLevel() {return level;};
-        int getNumFanIns() {return numFanIns;};
-        int getNumFanOuts() {return numFanOuts;};
-        LOGIC getValue() {return value;};
-        LOGIC getStuckAtValue() {assert(stuckAt); return stuckAtValue;}
+        int getNodeID();
+        int getLineNum();
+        gateT getGateType();
+        nodeT getNodeType() ;
+        int getLevel();
+        int getNumFanIns();
+        int getNumFanOuts();
+        LOGIC getValue();
+        LOGIC getTrueValue();
 
         vector<cktNode*> getUpstreamList();
         vector<cktNode*> getDownstreamList();
@@ -44,11 +49,17 @@ class cktNode {
 
 
         void setLevel(int l) {level = l;};
-        void setValue(LOGIC v) {assert(nodeType==PI); value=v;};
+        void setValue(LOGIC v);
         void setFault(int sav);
         void removeStuckAt() {stuckAt = false;}
+        bool isJustified();
+
+        cktNode* getUnassignedInput(bool controllable);
+        bool needAllInputs(LOGIC v);
+        LOGIC getLikely(cktNode* input, LOGIC v);
 
         bool evaluate();    //true if value changed
+        bool imply();       //true if inputs can be determined
         void reset();
 
 };
