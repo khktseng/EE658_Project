@@ -3,7 +3,7 @@
 #define STRUCTS_H
 
 #include "includes.h"
-#include "Logic.h"
+//#include "Logic.h"
 
 /* Node Type, column 1 of circuit format */
 typedef enum e_nodeType {
@@ -30,36 +30,36 @@ typedef enum e_gateType {
 enum e_logicType {
 	zero = 0, 
 	one = 1, 
-	X = 2, 
-	D = 3, 
-	Dbar= 4, 
+	x = 2, 
+	d = 3, 
+	dbar= 4, 
 }; 
 
 //  Logic Tables ////////////////////////
-//  Col and Row Indexes:  0, 1, X, D, D'
+//  Col and Row Indexes:  0, 1, x, d, d'
 const enum e_logicType AND_LOGIC5[5][5] = {
 	{zero, 	zero, 	zero, 	zero, 	zero},
-	{zero, 	one, 	X, 		D, 		Dbar},
-	{zero, 	X,		X,		X,		X},
-	{zero,	D,		X,		D,		zero},
-	{zero,	Dbar,	X,		zero,	Dbar},
+	{zero, 	one, 	x, 		d, 		dbar},
+	{zero, 	x,		x,		x,		x},
+	{zero,	d,		x,		d,		zero},
+	{zero,	dbar,	x,		zero,	dbar},
 };
 const enum e_logicType OR_LOGIC5[5][5] = {
-	{zero, 	one, 	X, 		D, 		Dbar},
+	{zero, 	one, 	x, 		d, 		dbar},
 	{one, 	one, 	one, 	one, 	one},
-	{X, 	one,	X,		X,		X},
-	{D,		one,	X,		D,		one},
-	{Dbar,	one,	X,		one,	Dbar},
+	{x, 	one,	x,		x,		x},
+	{d,		one,	x,		d,		one},
+	{dbar,	one,	x,		one,	dbar},
 };
 const enum e_logicType XOR_LOGIC5[5][5] = {
-	{zero, 	one, 	X, 		D, 		Dbar},
-	{one, 	zero, 	X, 		Dbar, 	D},
-	{X, 	X,		X,		X,		X},
-	{D,		Dbar,	X,		zero,	one},
-	{Dbar,	D,		X,		one,	zero},
+	{zero, 	one, 	x, 		d, 		dbar},
+	{one, 	zero, 	x, 		dbar, 	d},
+	{x, 	x,		x,		x,		x},
+	{d,		dbar,	x,		zero,	one},
+	{dbar,	d,		x,		one,	zero},
 };
 const enum e_logicType NOT_LOGIC5[5] = 
-	{one, 	zero, 	X, 		Dbar, 	D};
+	{one, 	zero, 	x, 		dbar, 	d};
 
 typedef struct n_struc {
    int indx;             /* node index(from 0 to NumOfLine - 1 */

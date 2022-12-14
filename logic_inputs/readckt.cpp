@@ -95,7 +95,7 @@ typedef struct n_struc {
    vector<int> upNodes;
    vector<int> downNodes;
    int level;                 /* level of the gate output */
-   int logic3[3]; 	//  for 5-state logic; 0, 1, X, D, Dbar
+   int logic3[3]; 	//  for 5-state logic; 0, 1, x, D, Dbar
    int fmask_AND; 	//  Fault Mask, AND
    int fmask_OR;	//  Fault Mask, OR
 } NSTRUC;                     
@@ -722,7 +722,7 @@ void setPI_forPLS(int indStart, int indEnd){
 	for(int PI = 0;PI<PI_list.size();PI++){
 		//  Get the current PI
 		np = &NodeV[ref2index[PI_list[PI]]];
-		//  Set to initial state of 'X'
+		//  Set to initial state of 'x'
 		np->logic3[0] = 0;
 		np->logic3[1] = ~0;// set to all 1's
 		np->logic3[2] = 0;
@@ -813,7 +813,7 @@ void processNodeQueue(void){
 bool simNode3(int nodeRef){
 	//  Function to determine current logic of this node
 	//  based on logic of upstream nodes.
-	//  Uses 3-bit logic; currently only 0, 1, X
+	//  Uses 3-bit logic; currently only 0, 1, x
 	//  Output True:   Node logic has changed
 	//  Output False:  Nodelogic has not changed
 	NSTRUC *np;
@@ -871,12 +871,12 @@ bool simNode3(int nodeRef){
 				// Bitwise XOR
 				np->logic3[k] = npIn_A->logic3[k] ^ npIn_B->logic3[k];
 			}
-			//  Fix for inversion with 'X'
+			//  Fix for inversion with 'x'
 			temp0 = np->logic3[0];
 			temp1 = np->logic3[1];
 			np->logic3[0] = temp0 & temp1;
 			np->logic3[1] = temp0 | temp1;
-			//  Fix for scenario inp A and B = 'X';
+			//  Fix for scenario inp A and B = 'x';
 			temp0 = np->logic3[1];
 			np->logic3[2] = ((npIn_A->logic3[0]^npIn_A->logic3[1])&
 				(npIn_B->logic3[0]^npIn_B->logic3[1]))|temp0;
