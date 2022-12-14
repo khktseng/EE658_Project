@@ -48,7 +48,7 @@ Circuit Simulator and ATPG
 #include <fstream>
 #include <sstream>
 #include <stdlib.h>     
-#include <time.h>  
+#include <sys/time.h>  
 #include <set>
 #include <map>
 
@@ -194,14 +194,15 @@ int propogate_Jfrontier_Dalg(int , int );
 void propogate_Dfrontier_Dalg(int , bool );
 void saveState_Dalg(set<int>& , set<int>& , vector< pair<int,enum e_logicType> >& );
 void reloadState_Dalg(set<int>&, set<int>& , vector< pair<int,enum e_logicType> >& );
-bool isErrAtPO_Dalg(void);
+int  faultAtPO_Dalg(void);
 bool forwardImply_Dalg(void);
 bool backwardsImply_Dalg(void);
-void backward_logic(int , bool &, vector<int> &);
+bool backward_logic(int , bool &, vector<int> &);
 enum e_logicType checkLogic_Dalg(int, bool &, bool &, bool &);
 void branchPropogate_Dalg(int ,enum e_logicType,  int );
 void printNode_Dalg(int );
 void printFrontiers_Dalg(void);
+void addInputPattern_Dalg(void);
 
 //  File Read/Write
 bool readFaultList(char *);
@@ -213,9 +214,10 @@ void writeAllFaults(char *);
 void writeFaultCoverageReport(vector<float>,char *);
 void getCircuitNameFromFile(char *);
 void writeSingleReport_Dalg(void);
+void writeAtpgReport(char *, double);
 
 /*----------------- Command definitions ----------------------------------*/
-#define NUMFUNCS 14
+#define NUMFUNCS 15
 void cread(char *);
 void pc(char *);
 void help(char *);
@@ -227,9 +229,10 @@ void rfl(char *);
 void multi_dfs(char*);
 void printNode(char *);
 void pfs(char *);
-void randomTestGenerator(char *);
+void RTG(char *);
 void DALG(char *);
-void DALG_DEBUG(char *);
+void DEBUG(char *);
+void ATPG_DET(char *);
 
 struct cmdstruc command[NUMFUNCS] = {
 	{"READ", cread, EXEC},
@@ -242,10 +245,11 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"DFS", multi_dfs, CKTLD},
 	{"PRINTNODE", printNode, CKTLD},
 	{"PFS", pfs, CKTLD},
-	{"RTG", randomTestGenerator,CKTLD},
+	{"RTG", RTG,CKTLD},
 	{"WRITEALLFAULTS", writeAllFaults, CKTLD},
 	{"DALG", DALG, CKTLD},
-	{"DALG_DEBUG", DALG_DEBUG, CKTLD},
+	{"DEBUG", DEBUG, EXEC},
+	{"ATPG_DET", ATPG_DET, EXEC},
 };
 
 /*----------------Global Variables-----------------------------------------*/
@@ -257,6 +261,8 @@ int Ngates;
 int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
 char currentCircuit[MAXNAME];			/* Name of current circuit ex: "c17" */
+
+int debugMode = 0;  // 0, 1, or 2; different messaging options to print to console
 
 int dfs_count = 1;
 vector<NSTRUC> NodeV;
@@ -285,7 +291,8 @@ vector< pair<int,int> > nodeQueueForward; //  First->level, second->node referen
 vector< pair<int,int> > nodeQueueBackward; //  First->level, second->node reference
 int faultyNode_Dalg;
 bool stuckAt_Dalg;
-int debugMode_Dalg = 0;
+int cycleCounter = 0;
+
 
 
 vector< pair<int,int> > nodeQueue; //  First->level, second->node reference
@@ -347,6 +354,131 @@ int main()
       else system(cline);
    }
 }
+/*------------------------------------------------------------*/
+/*------  ATPG Deterministic  --------------------------------*/
+/*------------------------------------------------------------*/
+
+void ATPG_DET(char *cp){
+	//  ATPG_DET
+	//  Read in formt:
+	//     ATPG_DET <circuit-name> <alg-name DALG/PODEM>
+	// Note:  At this time, only "DALG" works
+	struct timeval begin, end;
+	char circuitStr[MAXLINE];
+	char algType[MAXLINE];
+	sscanf(cp, "%s %s", circuitStr, algType);
+	
+	//  Start timer
+    
+    gettimeofday(&begin, 0);
+	
+	//  Read this circuit
+	cread(circuitStr);
+	
+	//Debug //////////
+	printf("\nATPG DETERMINISTIC\n");
+	printf("Circuit: %s\n",circuitName);
+	if(strcmp(algType,"DALG")==0){
+		printf("Method:  D Algorithm\n");
+	}else if (strcmp(algType, "PODEM")==0){
+		printf("Method:  D Algorithm\n");
+	}else{
+		printf("Method %s not recognized\n",algType);
+	}	
+	////////////////////////////////////	
+	
+	//  Create the reduced fault list
+	reduced_fault_list();
+	
+	// Clear out input pattern vector
+	inputPatterns.clear();
+	
+	//  Prune faults with "Fault equivalence"
+	//  Placeholder, TBD
+	
+	
+	//  Cycle through each fault
+	for(int i=0;i<FaultV.size();++i){
+		if(debugMode>0){
+			printf("Processing fault, %d@%d\n", FaultV[i].ref, FaultV[i].stuckAt);
+		}
+		faultyNode_Dalg = FaultV[i].ref;
+		stuckAt_Dalg = FaultV[i].stuckAt;
+		
+		//  Setup for D algorithm
+		bool isValid;
+		isValid = setup_Dalg();
+		if(!isValid){
+			printf("Node %d is not a valid node.  Exiting function\n", faultyNode_Dalg);
+			return;
+		}
+		
+		
+		//  Run D Algorithm
+		bool success_dalg;
+		success_dalg = D_algorithm();
+	
+		//  Print message to console
+		if(!success_dalg){
+			if(debugMode>0){
+				printf("  Failed D Algorithm ***************\n");
+			}
+		
+		}else{
+			if(debugMode>0){
+				printf("  Completed D Algorithm\n");
+			}
+			FaultV[i].faultFound.push_back(i);
+			
+			//Save PI patterns to "inputPatterns" vector
+			addInputPattern_Dalg();
+		}
+	}//  End loop for each fault
+	
+	//  Write file of input patterns
+	char filename[MAXLINE];
+	sprintf(filename,"%s_%s_ATPG_patterns.txt",currentCircuit, algType);
+	writeInputPatterns(filename, true);
+	printf("Writing test pattern file: %s\n",filename);
+	
+	// Stop measuring time and calculate the elapsed time
+    gettimeofday(&end, 0);
+	long seconds = end.tv_sec - begin.tv_sec;
+    long microseconds = end.tv_usec - begin.tv_usec;
+    double elapsed = seconds + microseconds*1e-6;
+	
+	if(debugMode>0){
+		printf("\nTook %.3f seconds\n", elapsed);
+	}
+	
+	writeAtpgReport(algType, elapsed);
+	
+	//  Print "OK"
+	printf("\n==> OK\n");
+	
+}
+
+void addInputPattern_Dalg(void){
+	NSTRUC *np;
+	vector<char> tempPattern;
+	for(int i=0;i<PI_Nodes.size();++i){
+		np = getNodePtr(PI_Nodes[i]);
+		
+		switch(np->logic5){
+			case zero:
+				tempPattern.push_back('0');
+				break;
+			case one:
+				tempPattern.push_back('1');
+				break;
+			default:
+				tempPattern.push_back('X');
+		}
+	}
+	inputPatterns.push_back(tempPattern);
+	
+}
+
 
 /*------------------------------------------------------------*/
 /*------  D-Algorithm  ---------------------------------------*/
@@ -355,14 +487,11 @@ void DALG(char *cp)
 {
 	NSTRUC *np;
 	int stuckAt;
-	char outFile[MAXNAME];
 	
 	//  Read in file names
 	//  global variable "faultyNode_Dalg"
 	sscanf(cp, "%d %d", &faultyNode_Dalg, &stuckAt);
 	
-	//  Get name of output report for results of this algorithm.
-	sprintf(outFile,"%s_DALG_%d@%d",currentCircuit, faultyNode_Dalg, stuckAt);
 	
 	if(stuckAt>0){
 		stuckAt_Dalg = true;
@@ -372,8 +501,7 @@ void DALG(char *cp)
 	
 	//Debug //////////
 	printf("\nD-Algorithm\n");
-	printf("Node %d stuck at %d\n",faultyNode_Dalg, stuckAt_Dalg);
-	printf("Output File: %s;\n", outFile);
+	printf("Node %d stuck at %d\n\n",faultyNode_Dalg, stuckAt_Dalg);
 	////////////////////////////////////
 	
 	//  Setup for D algorithm
@@ -391,12 +519,12 @@ void DALG(char *cp)
 	
 	//  Print message to console
 	if(!success_dalg){
-		if(debugMode_Dalg>0){
+		if(debugMode>0){
 			printf("Failed D Algorithm\n");
 		}
 		
 	}else{
-		if(debugMode_Dalg>0){
+		if(debugMode>0){
 			printf("Completed D Algorithm\n");
 			//  Print primary Inputs
 			printf("Primary Inputs\n");
@@ -459,12 +587,14 @@ bool setup_Dalg(void){
 	}
 	
 	//  To start process, add this node to the queue
-	if(debugMode_Dalg>1){
+	if(debugMode>1){
 		printf("Adding node %d to forward queue\n", faultyNode_Dalg);
 		printf("Adding node %d to backward queue\n", faultyNode_Dalg);
 	}
 	addNodeToQueue(nodeQueueForward, faultyNode_Dalg);
 	addNodeToQueue(nodeQueueBackward, faultyNode_Dalg);
+	
+	cycleCounter = 0;
 	
 	return true;
 	
@@ -481,45 +611,61 @@ bool D_algorithm(void){
 	set<int> D_front_save;
 	vector< pair<int,enum e_logicType> > logicState;
 	
-	if(debugMode_Dalg>1){
-		printf("Starting Recursive D Algorithm\n");
+	++cycleCounter; 
+	if(debugMode>1){
+		
+		printf("Starting Recursive D Algorithm, pass %d\n", cycleCounter);
 	}
+	if(cycleCounter>(NodeV.size())){
+		if(debugMode>1){
+			printf("Failure; exceeded cycle limit for the recursive D algorithm; %d cycles\n", cycleCounter);
+		}
+		return false;
+	}
+	
 	
 	//  Imply and Check.  Return failure if this fails
 	//  Process all nodes in the queue forward and backwards
 	while((nodeQueueForward.size()>0)||(nodeQueueBackward.size()>0)){
 		success = forwardImply_Dalg();
 		if(!success){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Failed forward imply\n");
 			}
 			return false;
 		}
 		success = backwardsImply_Dalg();
 		if(!success){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Failed backwards imply\n");
 			}
 			return false;
 		}
 	}
 	
-	if(debugMode_Dalg>1){
+	if(debugMode>1){
 		printFrontiers_Dalg();
 	}
 	
 	
 	//  D Frontier Handling
 	//  Is the error at the Primary Outputs?
-	isErrAtPO = isErrAtPO_Dalg();
+	//  Returns -1 if not at a PO
+	int PO_fault = faultAtPO_Dalg();
+	if(PO_fault>=0){
+		if(debugMode>1){
+			printf("success!  Fault has reached PO %d\n",PO_fault);
+		}
+	}
+	
 	//  Try to propogate error to Primary Outputs
-	if(!isErrAtPO){
-		if(debugMode_Dalg>1){
-			printf("Error Not at PO\n");
+	if(PO_fault<0){
+		if(debugMode>1){
+			printf("Fault Not at PO\n");
 		}
 		//  If D frontier is empty, encountered failure
 		if(D_frontier.size()==0){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Failed D Algorithm; D_frontier is empty\n");
 			}
 			return false;
@@ -531,7 +677,7 @@ bool D_algorithm(void){
 		while(Dptr!=D_frontier.end()){
 			//  See if this node has been tried
 			nodeD = *Dptr;
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Trying D Frontier Node %d\n", nodeD);
 			}
 			set<int>::iterator it = tryList.find(nodeD);
@@ -548,7 +694,7 @@ bool D_algorithm(void){
 				if (success){
 					return true;
 				}else{
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Failed propogate D frontier at node %d; backtracking\n", nodeD);
 					}
 					reloadState_Dalg(J_front_save, D_front_save, logicState);
@@ -559,7 +705,7 @@ bool D_algorithm(void){
 					if (success){
 						return true;
 					}else{
-						if(debugMode_Dalg>1){
+						if(debugMode>1){
 							printf("Failed propogate D frontier at node %d with alt XOR; backtracking\n", nodeD);
 						}
 						
@@ -571,7 +717,7 @@ bool D_algorithm(void){
 				Dptr++;
 			}
 		}
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("Tried all D-frontier and failed\n");
 		}
 		
@@ -593,11 +739,16 @@ bool D_algorithm(void){
 	while(Jptr!=J_frontier.end()){
 		//  See if this node has been tried
 		nodeJ = *Jptr;
+		if(debugMode>1){
+			printf("Processing J-frontier, node %d\n",nodeJ);
+			printNode_Dalg(nodeJ);
+		}
+		
 		if(tryList.find(nodeJ)==tryList.end()){
 			//  This node has not been tried yet
 			tryList.insert(nodeJ);
 			
-			while(nInputsX_Dalg>0){
+			while(nInputsX_Dalg(nodeJ)>0){
 				//  Save this current state in case backtracking is needed
 				saveState_Dalg(J_front_save, D_front_save, logicState);
 				//  Set inputs to backwards propogate J
@@ -608,7 +759,7 @@ bool D_algorithm(void){
 				if(success){
 					return success;
 				}else{
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Failed propogate J frontier at node %d; backtracking\n", nodeJ);
 					}
 					
@@ -660,7 +811,7 @@ int propogate_Jfrontier_Dalg(int nodeRef, int gateRef){
 		
 	}else{
 		//  Find a input which is "X" and set it to a controlling value
-		gateToSet = 0;
+		gateToSet = -1;
 		for(int i=0;i<np->upNodes.size();++i){
 			npUp = getNodePtr(np->upNodes[i]);
 			if(npUp->logic5 == X){
@@ -668,6 +819,13 @@ int propogate_Jfrontier_Dalg(int nodeRef, int gateRef){
 					break;
 			}
 		}
+		if(gateToSet<0){
+			printNode_Dalg(np->ref);
+			printf("Error, no X on this gate\n");
+			return -1;
+		}
+			
+		
 		switch(np->gateType){
 			case AND:
 			case NAND:
@@ -688,13 +846,13 @@ int propogate_Jfrontier_Dalg(int nodeRef, int gateRef){
 	//  Set logic of this upstream node and add to queue to process
 	npUp = getNodePtr(np->upNodes[gateToSet]);
 	npUp->logic5 = logicSet;
-	if(debugMode_Dalg>1){
+	if(debugMode>1){
 		printf("Adding node %d to backward queue\n", npUp->ref);
 		printf("Adding node %d to backward queue\n", np->ref); 
 	}
 	addNodeToQueue(nodeQueueBackward, npUp->ref);
 	addNodeToQueue(nodeQueueBackward, np->ref);//  Also re-evaluate thsi node
-	if(debugMode_Dalg>1){
+	if(debugMode>1){
 		printf("Propogating J-Frontier\n   Node %d assigning %s to upstream node %d\n",
 				np->ref, logicname(logicSet), npUp->ref);
 	}
@@ -736,13 +894,13 @@ void propogate_Dfrontier_Dalg(int nodeRef, bool XOR_version){
 				default:
 					printf("\nNode %d is in the D frontier and should not be\n",nodeRef);
 			}
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Propogating D-Frontier\n   Node %d assigning %s to upstream node %d\n",
 					np->ref, logicname(npUp->logic5), npUp->ref);
 			}
 			
 			//  Now add this upstream node to the queue to be backwards-processed
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Adding node %d to backward queue\n", npUp->ref);
 			}
 			addNodeToQueue(nodeQueueBackward, npUp->ref);
@@ -750,7 +908,7 @@ void propogate_Dfrontier_Dalg(int nodeRef, bool XOR_version){
 	}
 	
 	//  Now add this  node to the queue to be forward-processed
-	if(debugMode_Dalg>1){
+	if(debugMode>1){
 		printf("Adding node %d to forward queue\n", np->ref);
 	}
 	addNodeToQueue(nodeQueueForward, np->ref);
@@ -773,7 +931,7 @@ bool forwardImply_Dalg(void){
 		nodeQueueForward.pop_back();//  Remove this node
 		np = getNodePtr(nodeRef);
 		
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("\nForward Imply, Node %d\n",nodeRef);
 			printNode_Dalg(nodeRef);
 		}
@@ -783,15 +941,19 @@ bool forwardImply_Dalg(void){
 		//  Also determine if this is a J or D frontier
 		newLogic = checkLogic_Dalg(nodeRef, isOK, isJ, isD);
 		if(!isOK){
-			printf("Failed Forward Imply; node %d, logic conflict\n", nodeRef);
+			if(debugMode>1){
+				printf("Failed Forward Imply; node %d, logic conflict\n", nodeRef);
+			}
+			
 			return false;
 		}
 		if(isJ){
-			printf("Unexpected:  Forward Imply, found J Frontier on %d\n",nodeRef);
+			//printf("Unexpected:  Forward Imply, found J Frontier on %d\n",nodeRef);
 			//J_frontier.push_back(nodeRef);
+			addNodeToQueue(nodeQueueBackward, nodeRef);
 		}else if(isD){
 			//  New D frontier
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Adding node %d to D frontier",nodeRef);
 			}
 			
@@ -804,18 +966,18 @@ bool forwardImply_Dalg(void){
 			
 			if((np->logic5 != newLogic)||(np->ref == faultyNode_Dalg)){
 				if(np->ref != faultyNode_Dalg){
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Node %d, logic change from %s to %s\n", np->ref, logicname(np->logic5), logicname(newLogic));
 					}
 					np->logic5 = newLogic;
 				}
 				
 				
-				if(debugMode_Dalg>1){
+				if(debugMode>1){
 					printf("Adding downstream nodes to queue:\n");
 				}
 				for(int i=0;i<np->downNodes.size();++i){
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("  Adding node %d to forward queue\n",np->downNodes[i]);
 					}
 					addNodeToQueue(nodeQueueForward, np->downNodes[i]);
@@ -841,7 +1003,7 @@ bool backwardsImply_Dalg(void){
 		nodeQueueBackward.erase(nodeQueueBackward.begin());//  Remove this node
 		np = getNodePtr(nodeRef);
 		
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("\nBackwards Imply, Node %d\n",nodeRef);
 			printNode_Dalg(nodeRef);
 		}
@@ -849,7 +1011,7 @@ bool backwardsImply_Dalg(void){
 		
 		//  No need to process anything, go to next node
 		if(np->nodeType==PI){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Backwards Imply, reached PI node %d; no need to continue\n",np->ref);
 			}
 			
@@ -858,7 +1020,7 @@ bool backwardsImply_Dalg(void){
 		
 		//  If this is a branch, propagate through upstream and downstream nodes
 		if(np->gateType==BRCH){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Branch Node %d Reached, applying downstream logic\n",np->ref);
 			}
 			//  Branches can only have 1 input
@@ -871,7 +1033,7 @@ bool backwardsImply_Dalg(void){
 		//  Only good for determining if there is a conflict; isJ and isD ignored
 		newLogic = checkLogic_Dalg(nodeRef, isOK, isJ, isD);
 		if(!isOK){
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Failed Backwards Imply; node %d, logic conflict\n", nodeRef);
 			}
 			return false;
@@ -880,40 +1042,60 @@ bool backwardsImply_Dalg(void){
 		
 		//  Main logic function
 		vector<int> inputChangedList;
+		bool isOK;
 		
 		if(newLogic!=np->logic5){
-			//  Special handling for faulty node
+			//  Gate needs to be evaluated; output changed
 			if(np->ref == faultyNode_Dalg){
+				//  Special handling for faulty node
 				if(newLogic==X){
-					backward_logic(nodeRef, isJ, inputChangedList);
+					isOK = backward_logic(nodeRef, isJ, inputChangedList);
 				}
 			}else{
-				backward_logic(nodeRef, isJ, inputChangedList);
+				//  Normal Node
+				if((newLogic==D)||(newLogic==Dbar)){
+					//  Something wrong here; cannot back-propogate D
+					if(debugMode>1){
+						printf("Failure; attempting to back-propogate a D or Dbar\n");
+					}
+					return false;
+				}
+				isOK = backward_logic(nodeRef, isJ, inputChangedList);
 			}
 		}else{
 			isJ = false;
 		}
 		
-		
+		if(!isOK){
+			//  Something went wrong
+			if(debugMode>1){
+				printf("Failed to backwards propogate node %d; logical error\n", np->ref);
+			}
+		}
 		
 		//
 		
 		if(isJ){
 			// This node is a J-frontier, can't go any further
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("  Found new J-frontier, node %d\n", nodeRef);
 			}
 			J_frontier.insert(nodeRef);
+			if(np->gateType == NOT){
+				printf("NOT gate added to J frontier\n");
+				return false;
+			}
+			
 		}else{
 			// This node is not a J-frontier; continue upstream
 			//  Erase this from the J_frontier in case it is there
 			J_frontier.erase(nodeRef);
 			//  Push all the downstream nodes to the queue
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("  Not a J frontier; adding nodes to backward queue:\n", nodeRef);
 			}
 			for(int i = 0;i<inputChangedList.size();++i){
-				if(debugMode_Dalg>1){
+				if(debugMode>1){
 					printf("  Adding node %d to backward queue\n",inputChangedList[i]);
 				}
 				addNodeToQueue(nodeQueueBackward, inputChangedList[i]);		
@@ -924,11 +1106,11 @@ bool backwardsImply_Dalg(void){
 	return true;
 }
 
-void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
+bool backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 	//  Main logic function to backwards propogate a given gate logic output
 	//  to the gate upstream nodes
 	NSTRUC *np, *npUp;
-	enum e_logicType logUp, logNew, logEval;
+	enum e_logicType logUp, logNew, logEval, logTemp;
 	bool foo;
 	
 	// Current gate being evaluated
@@ -958,17 +1140,19 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 	if(np->upNodes.size()==1){
 		npUp = getNodePtr(np->upNodes[0]);
 		npUp->logic5 = logEval;
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
 		}
 		inputChangedList.push_back(npUp->ref);
-		return;
+		isJ = false;
+		return true;
 	}
 	
 	
 	//  Sanity Check
 	if((logEval!=one)&&(logEval!=zero)){
 		printf("Unexpected Behavior, backward logic of:%s node: %d\n", logicname(logEval), nodeRef);
+		exit(0);
 	}
 	
 	
@@ -990,7 +1174,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 				npUp = getNodePtr(np->upNodes[i]);
 				if(npUp->logic5 == X){
 					npUp->logic5 = one;
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
 					}
 					inputChangedList.push_back(npUp->ref);
@@ -1005,7 +1189,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 				npUp = getNodePtr(np->upNodes[i]);
 				if(npUp->logic5 == X){
 					npUp->logic5 = zero;
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
 					}
 					inputChangedList.push_back(npUp->ref);
@@ -1016,7 +1200,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			//  Choice must be made; add to J frontier
 			isJ = true;
 		}
-		return;
+		return true;
 	}
 	
 	//  OR/NOR gate handling
@@ -1028,7 +1212,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 				npUp = getNodePtr(np->upNodes[i]);
 				if(npUp->logic5 == X){
 					npUp->logic5 = zero;
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
 					}
 					inputChangedList.push_back(npUp->ref);
@@ -1042,7 +1226,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 				npUp = getNodePtr(np->upNodes[i]);
 				if(npUp->logic5 == X){
 					npUp->logic5 = one;
-					if(debugMode_Dalg>1){
+					if(debugMode>1){
 						printf("Applying logic, Node: %d = %s\n", npUp->ref, logicname(npUp->logic5));
 					}
 					inputChangedList.push_back(npUp->ref);
@@ -1053,7 +1237,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			//  Choice must be make; add to J frontier
 			isJ = true;
 		}
-		return;
+		return true;
 	}
 	
 	//  XOR/XNOR gate handling
@@ -1066,14 +1250,31 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 			np1 = getNodePtr(np->upNodes[0]);
 			np2 = getNodePtr(np->upNodes[1]);
 			if(np1->logic5==X){
-				np1->logic5 = NOT_LOGIC5[np2->logic5];
-				if(debugMode_Dalg>1){
+				if((np2->logic5 == D)||(np2->logic5 == Dbar)){
+					//  Cannot backwards-propogate D
+					return false;
+				}
+				if(logEval == zero){
+					np1->logic5 = np2->logic5;
+				}else{
+					np1->logic5 = NOT_LOGIC5[np2->logic5];
+				}
+				if(debugMode>1){
 					printf("Applying logic, Node: %d = %s\n", np1->ref, logicname(np1->logic5));
 				}
 				inputChangedList.push_back(np1->ref);
 			}else{
-				np2->logic5 = NOT_LOGIC5[np1->logic5];
-				if(debugMode_Dalg>1){
+				if((np1->logic5 == D)||(np1->logic5 == Dbar)){
+					//  Cannot backwards-propogate D
+					return false;
+				}
+				if(logEval == zero){
+					np2->logic5 = np1->logic5;
+				}else{
+					np2->logic5 = NOT_LOGIC5[np1->logic5];
+				}
+				
+				if(debugMode>1){
 					printf("Applying logic, Node: %d = %s\n", np2->ref, logicname(np2->logic5));
 				}
 				inputChangedList.push_back(np2->ref);
@@ -1084,6 +1285,7 @@ void backward_logic(int nodeRef, bool &isJ, vector<int>& inputChangedList){
 		}
 	}
 	
+	return true;
 }
 		
 
@@ -1186,8 +1388,9 @@ enum e_logicType checkLogic_Dalg(int nodeRef, bool &isOK, bool &isJ, bool &isD){
 		isOK = true;
 	}else{		
 		//  Conflict
-		printf("  input logic: %s, gate logic: %s\n", logicname(logSim), logicname(logActual));
-		
+		if(debugMode>1){
+			printf("  Conflict:  input logic: %s, gate logic: %s\n", logicname(logSim), logicname(logActual));
+		}
 		isOK = false;
 		isJ = false;
 		isD = false;
@@ -1243,7 +1446,7 @@ void branchPropogate_Dalg(int ref_B,enum e_logicType setLogic,  int origin){
 		}
 	}else{
 		np->logic5 = setLogic;
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("  Node %d logic set to %s\n", np->ref, logicname(np->logic5));
 		}
 	}
@@ -1254,7 +1457,7 @@ void branchPropogate_Dalg(int ref_B,enum e_logicType setLogic,  int origin){
 	if(np->gateType!=BRCH){
 		//  Reached a stump
 		//  Assign logic and assign to back-propogate
-		if(debugMode_Dalg>1){
+		if(debugMode>1){
 			printf("Adding node %d to backward queue\n", np->ref);
 		}
 		addNodeToQueue(nodeQueueBackward, np->ref);
@@ -1277,7 +1480,7 @@ void branchPropogate_Dalg(int ref_B,enum e_logicType setLogic,  int origin){
 			branchPropogate_Dalg(npDown->ref, np->logic5, np->ref);
 		}else{
 			//  Reached a gate or PO
-			if(debugMode_Dalg>1){
+			if(debugMode>1){
 				printf("Adding node %d to forward queue\n", npDown->ref);
 			}
 			addNodeToQueue(nodeQueueForward, npDown->ref);
@@ -1339,17 +1542,17 @@ void reloadState_Dalg(set<int>& J_front_save, set<int>& D_front_save, vector< pa
 
 
 
-bool isErrAtPO_Dalg(void){
+int faultAtPO_Dalg(void){
 	//  Determine if error is at PO
 	NSTRUC *np;
 	
 	for(int i=0;i<PO_Nodes.size();++i){
 		np = getNodePtr(PO_Nodes[i]);
 		if((np->logic5 == D)||(np->logic5 == Dbar)){
-			return true;
+			return np->ref;
 		}
 	}
-	return false;
+	return -1;
 }
 
 int nInputsX_Dalg(int nodeRef){
@@ -1419,10 +1622,11 @@ void printFrontiers_Dalg(void){
 	
 }
 
-void DALG_DEBUG(char *cp){
-	printf("Current debug mode: %d\n",debugMode_Dalg);
-	sscanf(cp, "%d", &debugMode_Dalg);
-	printf("Debug mode set to: %d\n",debugMode_Dalg);
+void DEBUG(char *cp){
+	//  Option to set debug mode for printing to console
+	printf("Current debug mode: %d\n",debugMode);
+	sscanf(cp, "%d", &debugMode);
+	printf("Debug mode set to: %d\n",debugMode);
 	
 }
 
@@ -1536,7 +1740,7 @@ void parallelFaultSimulation(void){
 	
 	
 }
-void randomTestGenerator(char *cp)
+void RTG(char *cp)
 {
 	//  Performs random test pattern simulation
 	char patternFile[MAXLINE];
@@ -1596,6 +1800,18 @@ void randomTestGenerator(char *cp)
 	
 	//  Write fault coverage report
 	writeFaultCoverageReport(faultCoverage, fcFile);
+	
+	//  Print faults not found to console
+	if(debugMode>0){
+		printf("Faults not found:\n");
+		for(int i = 0;i<FaultV.size();++i){
+			if(FaultV[i].faultFound.size()==0){
+				printf("%d@%d\n",FaultV[i].ref, FaultV[i].stuckAt);
+			}
+		}
+		
+	}
+	
 	
 	//  Print "OK"
 	printf("\n==> OK\n");
@@ -2246,7 +2462,9 @@ void setPI_forPLS(int indStart, int indEnd){
 
 
 void addNodeToQueue(vector< pair<int,int> >& queue, int nodeRef){
-
+	//  Adds node to queue if it doesn't exists already
+	//  Queue is sorted by level, largest to smallest
+	
 	//  First determine if this node is already in the queue
 	vector< pair<int,int> > ::iterator qIter;
 	for(qIter = queue.begin(); qIter!=queue.end();qIter++){
@@ -2672,7 +2890,8 @@ void cread(char *cp)
 
 			default:
 				printf("Unknown node type!\n");
-				exit(-1);
+				fclose(fd);
+				return;
         }
 
 		for(i=0;i<tempNode.fin;i++){
@@ -3203,6 +3422,31 @@ void writeSingleReport_Dalg(void){
 
 	printf("\n==> Writing D-algorithm single result: %s\n",filename);
 	
+}
+
+
+void writeAtpgReport(char *algType, double elapsedTime){
+	char filename[MAXLINE];
+	
+	FILE *fptr;
+	
+	sprintf(filename,"%s_%s_ATPG_report.txt",currentCircuit, algType);
+	fptr = fopen(filename,"w");
+	if(fptr == NULL) {
+		printf("File %s cannot be written!\n", filename);
+		return;
+	}
+	
+	float FC = getFaultCoverage();
+	
+	fprintf(fptr,"Algorithm: %s\n", algType);
+	fprintf(fptr,"Circuit: %s\n", currentCircuit);
+	fprintf(fptr,"Fault Coverage: %0.2f%%\n", 100*FC);
+	fprintf(fptr,"Time: %0.1f\n", elapsedTime);
+	
+	printf("\n==> Writing ATPG report: %s\n",filename);
+	//  Done writing file
+	fclose(fptr);
 }
 
 
