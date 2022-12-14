@@ -4,6 +4,7 @@
 #include <string.h>
 #include "Circuit.h"
 #include "cktNode.h"
+#include "Fault.h"
 #include "defines.h"
 
 using namespace std;
@@ -13,10 +14,24 @@ typedef struct testStruct {
 } TS;
 int main(){
 	Circuit ckt("circuits/add2.ckt");
+	
+	Fault* fault = ckt.createFault(5, 0);
+	inputMap testVector = ckt.PODEM(fault);
 
+	cout << "size: " << testVector.size() << '\n';
+
+	for(inputMap::iterator it = testVector.begin();
+		it != testVector.end(); ++it) {
+			cout << it->second << ",";
+		}
+
+	cout << "\n";
+
+
+/*
 	inputMap input;
-	input[1] = ZERO;
-	input[2] = ZERO;
+	input[1] = X;
+	input[2] = X;
 	input[3] = ONE;
 	input[4] = ZERO;
 	input[5] = ZERO;
@@ -42,7 +57,7 @@ int main(){
 	cout << "node 50: " << n50 << "\n";
 	cout << "node 51: " << n51 << "\n";
 	cout << "node 52: " << n52 << "\n";
-
+*/
 
 
 	/*pil2 = pil;
