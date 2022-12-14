@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
+#include <sys/time.h>
 
 #include <algorithm>
 #include <iostream>
