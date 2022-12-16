@@ -14,6 +14,7 @@ class cktNode {
         int numFanIns;
         int numFanOuts;
         vector<int> upstreamIDs;
+        vector<int> downstreamIDs;
         vector<cktNode*> upstreamNodes;
         vector<cktNode*> downstreamNodes;
         int level;
@@ -24,9 +25,14 @@ class cktNode {
         bool stuckAt;
         LOGIC stuckAtValue;
         
+        LOGIC eval(vector<LOGIC> args);
+        LOGIC eval(vector<cktNode*> args);
+        LOGIC eval(vector<cktNode*> args, LOGIC ci);
         LOGIC eval(LOGIC a, LOGIC b);
         bool implyFromOutput(LOGIC xSet);
-        bool implyFromInputs(LOGIC xSet);
+        bool implyFromInputs(LOGIC xSet, bool NGate);
+        queue<LOGIC> notXList();
+        vector<LOGIC> getInputList();
 
     public:
         bool tested;
@@ -53,6 +59,7 @@ class cktNode {
         void setFault(int sav);
         void removeStuckAt() {stuckAt = false;}
         bool isJustified();
+        bool isStuckAt();
 
         cktNode* getUnassignedInput(bool controllable);
         bool needAllInputs(LOGIC v);
@@ -61,11 +68,30 @@ class cktNode {
         bool evaluate();    //true if value changed
         bool imply();       //true if inputs can be determined
         void reset();
+        void resetValue();
+        bool faultMatch();
 
 };
 typedef map<int, cktNode*> cktMap;
 typedef vector<cktNode*> cktList;
 typedef queue<cktNode*> cktQ;
+
+inline ostream &operator<<(ostream &str, cktNode* node) {
+    if (node->isStuckAt()){
+        str << "<S ";    
+    } else {
+        str << "<N";
+    }
+    str << node->getNodeID() << "=" << node->getValue();
+    str << " : " << node->getGateType();
+    str << " of ";
+    for (int i = 0; i < node->getUpstreamList().size(); i++) {
+        str << node->getUpstreamList()[i]->getNodeID() << "=";
+        str << node->getUpstreamList()[i]->getValue() << " ";
+    }
+    str << ">";
+    return str;
+}
 
 #include "cktNode.cpp"
 #endif

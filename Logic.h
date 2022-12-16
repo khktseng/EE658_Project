@@ -35,10 +35,11 @@ inline LOGIC operator~(LOGIC const &a) {
 }
 
 inline LOGIC operator&(LOGIC const &a, LOGIC const &b) {
-    if ((LOGIC*)a == (LOGIC*)b) {return a;}
     if (a == ZERO || b == ZERO) {return ZERO;}
     if (a == X || b == X) {return X;}
-    return (LOGIC)(BIT1((int)a^b) + BIT0((int)a&b));
+    if (a == ONE) {return b;}
+    if (b == ONE) {return a;}
+    return ZERO;
 }
 
 inline ostream &operator<<(ostream &str, LOGIC l) {
@@ -65,5 +66,17 @@ inline ostream &operator<<(ostream &str, LOGIC l) {
 
 typedef map<int, LOGIC> inputMap;
 typedef vector<inputMap*> inputList;
+typedef queue<inputMap*> inputQ;
+
+inline ostream &operator<<(ostream &str, inputMap* ins) {
+    str << "<";
+    for (inputMap::iterator it = ins->begin(); it != ins->end(); ++it) {
+        str << it->first << "=" << it->second << ", ";
+    }
+    str << "\b\b";
+    str << ">";
+
+    return str;
+}
 
 #endif

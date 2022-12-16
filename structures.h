@@ -3,7 +3,7 @@
 #define STRUCTS_H
 
 #include "includes.h"
-//#include "Logic.h"
+#include "Logic.h"
 
 /* Node Type, column 1 of circuit format */
 typedef enum e_nodeType {
@@ -25,7 +25,20 @@ typedef enum e_gateType {
 	AND = 7,
 	XNOR = 8,
 } gateT;
-
+inline ostream &operator<<(ostream &str, gateT gate) {
+	switch (gate) {
+		case IPT: str << "IPT"; 	break;
+		case BRCH: str << "BRCH";	break;
+		case XOR: str << "XOR";		break;
+		case OR: str << "OR";		break;
+		case NOR: str << "NOR";		break;
+		case NAND: str <<"NAND";	break;
+		case AND: str << "AND";		break;
+		case XNOR: str << "XNOR";	break;
+		case NOT: str << "NOT";		break;
+	}
+	return str;
+}
 //  gate types, Column 3 of circuit format	
 enum e_logicType {
 	zero = 0, 

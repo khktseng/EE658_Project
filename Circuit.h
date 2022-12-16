@@ -5,7 +5,6 @@
 #include "structures.h"
 #include "cktNode.h"
 #include "defines.h"
-#include "Logic.h"
 #include "Fault.h"
 
 typedef struct objective_s{
@@ -28,15 +27,20 @@ class Circuit {
         void levelize(cktNode *currNode, int curr_level);
         void levelize();
         void verifyLink();
-        void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dFrontier);
+        void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktList* dFrontier);
         faultList rflCheckpoint();
-        faultMap deductiveFaultSim(faultList* fl, inputList* inputs);
+        
         inputMap randomTestGen();
-        inputMap podem(Fault* fault, cktQ* dFrontier);
-        OBJECTIVE objective(cktQ* dFrontier);
+        bool podem(Fault* fault, cktList* dFrontier);
+        OBJECTIVE objective(cktList* dFrontier);
         OBJECTIVE backtrace(OBJECTIVE kv);
         void backwardsImplication(cktNode* root);
         bool faultAtPO();
+        cktNode getNode(int nodeID);
+        bool xPathCheck(cktNode* node);
+        bool xPathCheck(cktList* dFrontier);
+        void placeholder();
+        void resetPO();
 
     public:
         Circuit(string filename);
@@ -45,14 +49,17 @@ class Circuit {
         vector<cktNode*> getPONodeList(){return POnodes;};
         LOGIC getNodeLogic(int nodeID);
         faultList generateFaults(bool reduced);
+        vector<int> getNodeIDs();
         void addFault(Fault* fault);
         Fault* createFault(int nodeID, int sav);
         void simulate(map<int, LOGIC> *input);
         void reset();
         double faultCoverage(faultList* detectedFaults);
         inputList randomTestsGen(int numTests);
+        faultMap deductiveFaultSim(faultList* fl, inputList* inputs);
 
-        inputMap PODEM(Fault* fault);
+        inputMap* PODEM(Fault* fault);
+        void printPO();
         
 
 };

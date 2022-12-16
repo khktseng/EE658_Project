@@ -76,6 +76,21 @@ Circuit::Circuit(string filename) {
     assert(this->numNodes == this->nodes.size());
 }
 
+void Circuit::resetPO() {
+    for (int i = 0; i < POnodes.size(); i++) {
+        POnodes[i]->resetValue();
+    }
+}
+
+
+void Circuit::printPO() {
+    cout <<"<";
+    for(int i = 0; i < POnodes.size(); i++) {
+        cout << POnodes[i]->getNodeID() << "=" << POnodes[i]->getValue() << ",";
+    }
+    cout << ">\n";
+}
+
 
 void Circuit::linkNodes(){
     //link all upstream nodes for each node first
@@ -91,6 +106,16 @@ void Circuit::verifyLink() {
         assert(checkNode->getUpstreamList().size() == checkNode->getNumFanIns());
         assert(checkNode->getDownstreamList().size() == checkNode->getNumFanOuts());
     }
+}
+
+
+vector<int> Circuit::getNodeIDs(){
+    vector<int> nodeIDs;
+    for (cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
+        nodeIDs.push_back(it->first);
+    }
+
+    return nodeIDs;
 }
 
 
@@ -144,14 +169,13 @@ void Circuit::simulate(inputMap* inputmap) {
         }
     }
 
-    cktQ xList;
+    cktList xList;
     simulate(&toEvaluate, &notEvaluated, 1, &xList);
-    assert(xList.empty());
     initialized = true;
 }
 
 
-void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dFrontier) {
+void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktList* dFrontier) {
     if (toEvaluate->size() == 0) {
         return;
     }
@@ -166,7 +190,7 @@ void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dF
             for (int i = 0; i < currNode->getDownstreamList().size(); i++) {
                 notEvaluated->push(currNode->getDownstreamList()[i]);
             }
-        } else {
+        } else if (currNode->getValue() == X){
             bool dFront = false;
             for (int i = 0; i < currNode->getUpstreamList().size(); i++) {
                 if (currNode->getUpstreamList()[i]->getValue() == D
@@ -175,7 +199,7 @@ void Circuit::simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktQ* dF
                 }
             }
             if (dFront) {
-                dFrontier->push(currNode);
+                dFrontier->push_back(currNode);
             }
         }
     }
@@ -233,14 +257,6 @@ void Circuit::addFault(Fault* fault) {
 
 Fault* Circuit::createFault(int nodeID, int sav) {
     try {
-        if (nodeID > nodes.size()) {
-            throw nodeID;
-        }
-    } catch (int n) {
-        cout << "BadValueException: node " << n << " is out of range\n";
-    }
-
-    try {
         if (sav > 1 || sav < 0) {
             throw sav;
         }
@@ -284,32 +300,59 @@ inputList Circuit::randomTestsGen(int numTest) {
 
 
 faultMap Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
-    faultList faults = *fl;
-    inputList inputs = *ins;
     faultMap detectedFaults;
+    bool faultDetected;
+
+    Fault* currFault;
+    inputMap* currInput;
+
+    cout << fl->size() << "\n";
+    cout << ins->size() << "\n";
 
     for (int i = 0; i < fl->size(); i++) {
-        this->addFault(faults[i]);
-        for (int j = 0; j < inputs.size(); i++) {
-            this->simulate(inputs[j]);
+        faultDetected = false;
+        this->reset();
+        currFault = fl->at(i);
+        this->addFault(currFault);
 
-            for (int k = 0; k < POnodes.size(); k++) {
-                LOGIC currOutput = POnodes[k]->getValue();
-                if (currOutput == D || currOutput == DB) {
-                    detectedFaults[inputs[j]]->push_back(faults[i]);
-                    break;
+        for (int j = 0; j < ins->size() && !faultDetected; j++) {
+            resetPO();
+            currInput = ins->at(j);
+            this->simulate(currInput);
+
+            if (faultAtPO()) {
+                if (detectedFaults[currInput] == NULL) {
+                    cout << "creating new faultList \n";
+                    detectedFaults[currInput] = new faultList();
                 }
+                detectedFaults[currInput]->push_back(currFault);
+                faultDetected = true;
+                //cout << "Fault " << currFault << " detected by " << currInput << "\n";
             }
         }
-        this->reset();
+
+        if (!faultDetected) {
+             cout << "fault " << currFault << " not detected\n";
+        }
     }
+
+    cout << detectedFaults.size() << "\n";
 
     return detectedFaults;
 }
 
 
 void Circuit::backwardsImplication(cktNode* root) {
-    if(!root->imply()) {return;}
+    if(!root->imply()) {
+        cktQ toEvaluate;
+        cktQ notEvaluated;
+        cktList dFrontier;
+        for (int i = 0; i < root->getDownstreamList().size(); i ++) {
+            toEvaluate.push(root->getDownstreamList()[i]);
+        }
+        this->simulate(&toEvaluate, &notEvaluated, root->getLevel() + 1, &dFrontier);
+        return;
+    }
 
     for (int i = 0; i < root->getUpstreamList().size(); i++) {
         backwardsImplication(root->getUpstreamList()[i]);
@@ -317,7 +360,7 @@ void Circuit::backwardsImplication(cktNode* root) {
 }
 
 
-OBJECTIVE Circuit::objective(cktQ* dFrontier) {
+OBJECTIVE Circuit::objective(cktList* dFrontier) {
     OBJECTIVE obj;
 
     if (dFrontier->empty()) {
@@ -328,10 +371,11 @@ OBJECTIVE Circuit::objective(cktQ* dFrontier) {
     cktNode* dIn;
 
     do {
-        dGate = dFrontier->front();
-        dFrontier->pop();
+        dGate = dFrontier->back();
+        dFrontier->pop_back();
         dIn = dGate->getUnassignedInput(true);
     } while (dIn == NULL && !dFrontier->empty());
+    dFrontier->push_back(dGate);
     
     LOGIC objV;
     switch (dGate->getGateType()) {
@@ -387,45 +431,104 @@ bool Circuit::faultAtPO() {
 }
 
 
-inputMap Circuit::PODEM(Fault* fault) {
+bool Circuit::xPathCheck(cktList* dFrontier) {
+    cktQ dFQ;
+    for (int i = 0; i < dFrontier->size(); i++) {
+        dFQ.push(dFrontier->at(i));
+    }
+
+    int frontierSize = dFQ.size();
+    for (int i = 0; i < frontierSize; i++) {
+        cktNode* currNode = dFQ.front();
+        dFQ.pop();
+        if (xPathCheck(currNode)) {
+            //dFrontier->push(currNode);
+            return true;
+        }
+        //dFrontier->push(currNode);
+    }
+    return false;
+}
+
+bool Circuit::xPathCheck(cktNode* node) {
+    if (node->getValue() != X) {
+        return false;
+    }
+    if (node->getNodeType() == PO) {
+        return true;
+    }
+    for (int i = 0; i < node->getDownstreamList().size(); i++) {
+        if (xPathCheck(node->getDownstreamList()[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void placeholder() {
+    int x = 10;
+}
+
+
+inputMap* Circuit::PODEM(Fault* fault) {
     this->reset();
     this->addFault(fault);
 
+    LOGIC dVal = fault->getNode()->getTrueValue();
     cktQ toEvaluate;
     cktQ notEvaluated;
-    cktQ dFrontier;
+    cktList dFrontier;
     cktNode* dNode = fault->getNode();
+    
 
     for (int i = 0; i < dNode->getDownstreamList().size(); i++) {
         toEvaluate.push(dNode->getDownstreamList()[i]);
     }
-    this->simulate(&toEvaluate, &notEvaluated, dNode->getLevel(), &dFrontier);
+
+    if (dNode->getNodeType() == FB) {
+        while (dNode->getNodeType() == FB) {
+            dNode = dNode->getUpstreamList()[0];
+        }
+        dNode->setValue(dVal);
+        for (int i = 0; i < dNode->getDownstreamList().size(); i++) {
+            toEvaluate.push(dNode->getDownstreamList()[i]);
+        }
+    }
+
+    this->simulate(&toEvaluate, &notEvaluated, dNode->getLevel() + 1, &dFrontier);
     this->backwardsImplication(dNode);
 
-    return podem(fault, &dFrontier);
+    if (podem(fault, &dFrontier)) {
+        inputMap* testVector = new inputMap();
+        for (int i = 0; i < PInodes.size(); i++) {
+            (*testVector)[PInodes[i]->getNodeID()] = PInodes[i]->getTrueValue();
+        }
+        return testVector;
+    } else {
+        cout << "PODEM Failed : " << fault << "\n\n";
+        return NULL;
+    }
 }
 
 
-inputMap Circuit::podem(Fault* fault, cktQ* dFrontier) {
-    inputMap testPattern;
+int pf(Fault* fault) {
+    return fault->getNode()->getNodeID();
+}
+
+
+bool Circuit::podem(Fault* fault, cktList* dFrontier) {
     if (faultAtPO()) {
-        for (int i = 0; i < PInodes.size(); i++) {
-            testPattern[PInodes[i]->getNodeID()] = PInodes[i]->getTrueValue();
-        }
-        return testPattern;
+        //cout << "success, " << fault << " at PO\n";
+        return true;
     }
-    bool xPathCheck = false;
-    for (int i = 0; i < POnodes.size(); i++) {
-        if (POnodes[i]->getValue() == X){
-            xPathCheck = true;
-        }
-    }
-    if (!xPathCheck) {
-        return testPattern;
+
+    if (!xPathCheck(dFrontier)) {
+        //cout << "xPath FAIL : " << fault << "\n";
+        return false;
     }
 
     OBJECTIVE obj = objective(dFrontier);
-    if (obj.node == NULL || obj.targetValue == X) {return testPattern;}
+    if (obj.node == NULL || obj.targetValue == X) {return false;}
     OBJECTIVE piBacktrace = backtrace(obj);
 
     cktQ toEvaluate;
@@ -435,10 +538,9 @@ inputMap Circuit::podem(Fault* fault, cktQ* dFrontier) {
     for (int i = 0; i < piBacktrace.node->getDownstreamList().size(); i++) {
         toEvaluate.push(piBacktrace.node->getDownstreamList()[i]);
     }
-    this->simulate(&toEvaluate, &notEvaluated, piBacktrace.node->getLevel(), dFrontier);
-    testPattern = podem(fault, dFrontier);
-    if (!testPattern.empty()) {
-        return testPattern;
+    this->simulate(&toEvaluate, &notEvaluated, piBacktrace.node->getLevel() + 1, dFrontier);
+    if (podem(fault, dFrontier)) {
+        return true;
     }
 
     assert(toEvaluate.empty() && notEvaluated.empty());
@@ -449,11 +551,16 @@ inputMap Circuit::podem(Fault* fault, cktQ* dFrontier) {
         toEvaluate.push(piBacktrace.node->getDownstreamList()[i]);
     }
     this->simulate(&toEvaluate, &notEvaluated, 1, dFrontier);
-    testPattern = podem(fault, dFrontier);
+    bool podemOut = podem(fault, dFrontier);
     piBacktrace.node->setValue(X);
     piBacktrace.node->tested = true;
-    return testPattern;
+
+    if (podemOut) {
+        //cout << "Backtrace failed\n";
+    }
+    return podemOut;
 }
 
-
+cktNode Circuit::getNode(int nodeID)
+    {return *nodes[nodeID];}
 
