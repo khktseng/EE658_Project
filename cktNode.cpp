@@ -30,8 +30,15 @@ int cktNode::getNumFanOuts() {
     return numFanOuts;
 }
 
+bool cktNode::faultMatch() {
+    return (stuckAtValue == D && value != ZERO) ||
+            (stuckAtValue == DB && value != ONE);
+}
+
 LOGIC cktNode::getValue() {
-    if (stuckAt) return stuckAtValue; 
+    if (stuckAt && faultMatch()) {
+        return stuckAtValue; 
+    }
     return value;
 };
 LOGIC cktNode::getTrueValue() {
@@ -131,6 +138,7 @@ cktNode::cktNode(int id, int ln, gateT gt, nodeT nt, int fis, int fos, vector<in
     numFanIns = fis;
     numFanOuts = fos;
     upstreamIDs = usIDs;
+    downstreamIDs = *(new vector<int>());
     level = -1;
     value = X;
     tested = false;
@@ -148,6 +156,7 @@ void cktNode::link(cktMap *nodes) {
         for(int i = 0; i < upstreamIDs.size(); i++) {
             upstreamNodes.push_back((*nodes)[upstreamIDs[i]]);
             (*nodes)[upstreamIDs[i]]->downstreamNodes.push_back(this);
+            (*nodes)[upstreamIDs[i]]->downstreamIDs.push_back(this->nodeID);
         }
     }
 
@@ -157,6 +166,7 @@ void cktNode::link(cktMap *nodes) {
 
 void cktNode::setFault(int sav) {
     stuckAt = true;
+    tested = true;
     if (sav) {
         stuckAtValue = DB;
         value = ZERO;
@@ -167,44 +177,111 @@ void cktNode::setFault(int sav) {
 }
 
 // Evaluate the two logics based on gateType
-LOGIC cktNode::eval(LOGIC a, LOGIC b) {
-    switch (gateType){
+LOGIC cktNode::eval(vector<LOGIC> args) {
+    if (gateType == NOT) {return ~args[0];}
+    if (gateType == BRCH) {return args[0];}
+
+    LOGIC newVal = X;
+    queue<LOGIC> notX = notXList();
+    bool hasXIn = !(notX.size() == upstreamNodes.size());
+    if (!notX.empty()) {
+        newVal = notX.front();
+        notX.pop();
+    }
+
+    while (!notX.empty()) {
+        LOGIC popped = notX.front();
+        notX.pop();
+        switch (gateType) {
+            case XNOR:
             case XOR:
-                return a ^ b;
+                newVal = newVal ^ popped;
                 break;
             case OR:
-                return a | b;
+            case NOR:
+                newVal = newVal | popped;
                 break;
             case AND:
-                return a & b;
-                break;
-            case XNOR:
-                return a ^ b;
-                break;
-            case NOR:
-                return ~(a | b);
-                break;
             case NAND:
-                return ~(a & b);
+                newVal = newVal & popped;
                 break;
             default:
-                cout << "evaluate error\n";
+                cout << gateType << " evaluate error \n";
+                assert(upstreamNodes.size() == 1);
                 return X;
                 break;
         }
+    }
+
+    if (hasXIn) {
+        switch (gateType) {
+            case XOR:
+            case XNOR:  
+                newVal = newVal ^ X; 
+                break;
+            case OR:
+            case NOR:   
+                newVal = newVal | X; 
+                break;
+            case AND:
+            case NAND:  
+                newVal = newVal & X; 
+                break;
+            default:
+                cout << "x in error\n";
+                return X;
+                break;
+        }
+    }
+
+    if (gateType == XNOR || gateType == NOR || gateType == NAND) {
+        return ~newVal;
+    }
+    return newVal;
+}
+
+
+LOGIC cktNode::eval(cktList args) {
+    vector<LOGIC> argList;
+
+    for (int i = 0; i < upstreamNodes.size(); i++) {
+        argList.push_back(upstreamNodes[i]->getValue());
+    }
+
+    return eval(argList);
+}
+
+LOGIC cktNode::eval(cktList args, LOGIC ci) {
+    vector<LOGIC> argList;
+    argList.push_back(ci);
+    for (int i = 0; i < upstreamNodes.size(); i++) {
+        argList.push_back(upstreamNodes[i]->getValue());
+    }
+
+    return eval(argList);
+}
+
+
+LOGIC cktNode::eval(LOGIC a, LOGIC b) {
+    vector<LOGIC> argList = {a, b};
+    return eval(argList);
+}
+
+
+queue<LOGIC> cktNode::notXList() {
+    queue<LOGIC> notX;
+    for (int i = 0; i < upstreamNodes.size(); i++) {
+        if (upstreamNodes[i]->getValue() != X) {
+            notX.push(upstreamNodes[i]->getValue());
+        }
+    }
+    return notX;
 }
 
 
 bool cktNode::evaluate() {
     assert(nodeType != PI);
-    LOGIC newValue;
-    
-    if (gateType == NOT) newValue = ~upstreamNodes[0]->getValue();
-    else newValue = upstreamNodes[0]->getValue();
-
-    for (int i = 1; i < upstreamNodes.size(); i++) {
-        newValue = eval(newValue, upstreamNodes[i]->getValue());
-    }
+    LOGIC newValue = eval(this->upstreamNodes);
 
     if (newValue != this->value) {
         this->value = newValue;
@@ -225,10 +302,13 @@ bool cktNode::implyFromOutput(LOGIC xSet) {
     return xFlag;
 }
 
-bool cktNode::implyFromInputs(LOGIC xSet) {
+bool cktNode::implyFromInputs(LOGIC xSet, bool NGate) {
+    if (NGate) {
+        xSet = ~xSet;
+    }
     cktList xList;
     for (int i = 0; i < upstreamNodes.size(); i++) {
-        if (upstreamNodes[i]->getValue() == xSet) {
+        if ((upstreamNodes[i]->getValue() == xSet)) {
             return false;
         }
         if (upstreamNodes[i]->getValue() == X) {
@@ -267,40 +347,42 @@ bool cktNode::imply(){
             if (this->getTrueValue() == ZERO) {
                 return implyFromOutput(ZERO);
             } else { // this.truevalue is ONE
-                return implyFromInputs(ONE);
+                return implyFromInputs(ONE, false);
             }
             break;
         case NOR:
             if (this->getTrueValue() == ONE) {
                 return implyFromOutput(ZERO);
             } else { // this.truevalue is ZERO 
-                return implyFromInputs(ONE);
+                return implyFromInputs(ONE, true);
             }
             break;
         case AND:
             if (this->getTrueValue() == ONE) {
                 return implyFromOutput(ONE);
             } else { // this.truevalue is ZERO
-                return implyFromInputs(ZERO);
+                return implyFromInputs(ZERO, false);
             }
             break;
         case NAND:
             if (this->getTrueValue() == ZERO) {
                 return implyFromOutput(ONE);
             } else {
-                return implyFromInputs(ZERO);
+                return implyFromInputs(ZERO, true);
             }
         case XOR:
             for (int i = 0; i < upstreamNodes.size(); i++) {
                 if (upstreamNodes[i]->getValue() != X) {
                     if (ci == X) {ci = upstreamNodes[i]->getValue();}
-                    else {ci = eval(ci, upstreamNodes[i]->getValue());}
+                    else {
+                        ci = eval(getUpstreamList(), ci);
+                    }
                 } else {
                     xList.push_back(upstreamNodes[i]);
                 }
             }
             if (xList.size() == 1) {
-                xList[0]->setValue(eval(ci, this->value));
+                xList[0]->setValue(eval(getUpstreamList(), ci));
                 return true;
             }
             return false;
@@ -335,4 +417,13 @@ bool cktNode::isJustified() {
 void cktNode::reset() {
     value = X;
     stuckAt = false;
+    tested = false;
+}
+
+void cktNode::resetValue() {
+    value = X;
+}
+
+bool cktNode::isStuckAt() {
+    return stuckAt;
 }

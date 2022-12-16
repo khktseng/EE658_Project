@@ -19,8 +19,14 @@ class Fault {
         int getSAV() {return stuckAtValue;};
 };
 
+inline ostream &operator<<(ostream &str, Fault* fault) {
+    str << "<F@ " << fault->getNode()->getNodeID() << ", sav=" << fault->getSAV()<< ">";
+    return str;
+}
+
 typedef vector<Fault*> faultList;
 typedef map<inputMap*, faultList*> faultMap;
+typedef queue<Fault*> faultQ;
 
 #include "Fault.cpp"
 #endif

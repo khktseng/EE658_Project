@@ -2,9 +2,12 @@
 #include <fstream>
 #include <vector>
 #include <string.h>
+#include "includes.h"
 #include "Circuit.h"
 #include "cktNode.h"
+#include "Fault.h"
 #include "defines.h"
+#include "Logic.h"
 
 using namespace std;
 
@@ -12,11 +15,81 @@ typedef struct testStruct {
 	int value;
 } TS;
 int main(){
-	Circuit ckt("circuits/add2.ckt");
+	Circuit ckt("circuits/c17.ckt");
 
+	cout << "Num inputs: " << ckt.getPINodeList().size() << "\n";
+	cout << "PI IDs: ";
+	for (int i = 0; i < ckt.getPINodeList().size(); i++) {
+		cout << ckt.getPINodeList()[i]->getNodeID() << ", ";
+	}
+
+	cout << "\b\b" << " \n";
+
+	inputMap testInp;
+	testInp[1] = ONE;
+	testInp[2] = ZERO;
+	testInp[3] = X;
+	testInp[6] = X;
+	testInp[7] = X;
+
+	cout << "starting simulation\n";
+
+	ckt.simulate(&testInp);
+
+	cout << "initial sim complete\n";
+
+	Fault* testFault = ckt.createFault(1, 0);
+	ckt.addFault(testFault);
+	ckt.simulate(&testInp);
+	ckt.printPO();
+
+	cout << "initial fault simulation complete\n";
+
+	vector<int> nodeIDs = ckt.getNodeIDs();
+	faultList faults;
+	inputList ins;
+
+	cout << "# of nodes : " << nodeIDs.size() << "\n";
+
+	int id;
+	for (int i = 0 ;i < nodeIDs.size(); i++) {
+		id = nodeIDs[i];
+		for (int j = 0; j < 2; j++) {
+			
+			Fault* fault = ckt.createFault(nodeIDs[i], j);
+			inputMap* test = ckt.PODEM(fault);
+			faults.push_back(fault);
+			if (test != NULL) ins.push_back(test);
+		}
+	}
+
+	cout << "# of faults : " << faults.size() << "\n";
+	cout << "# of inputs : " << ins.size() << "\n";
+
+	faultMap fm = ckt.deductiveFaultSim(&faults, &ins);
+
+	
+	cout << "# vectors detecting a fault: " << fm.size() << "\n\n";
+
+	int testNum = 0;
+	int numFaults = 0;
+	for (faultMap::iterator it = fm.begin(); it != fm.end(); ++it) {
+		cout << "Test Vector\t#" << testNum << ": " << it->first << " tests:";
+		for (int i = 0; i < it->second->size(); i++) {
+			cout << it->second->at(i) << "\n";
+			numFaults++;
+		}
+		cout << "\n\n";
+		testNum++;
+	}
+
+	cout << "Number of faults detected: " << numFaults << "\n";
+
+
+/*
 	inputMap input;
-	input[1] = ZERO;
-	input[2] = ZERO;
+	input[1] = X;
+	input[2] = X;
 	input[3] = ONE;
 	input[4] = ZERO;
 	input[5] = ZERO;
@@ -42,7 +115,7 @@ int main(){
 	cout << "node 50: " << n50 << "\n";
 	cout << "node 51: " << n51 << "\n";
 	cout << "node 52: " << n52 << "\n";
-
+*/
 
 
 	/*pil2 = pil;
