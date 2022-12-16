@@ -30,7 +30,7 @@ class Circuit {
         void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktList* dFrontier);
         faultList rflCheckpoint();
         
-        inputMap randomTestGen();
+        inputMap* randomTestGen();
         bool podem(Fault* fault, cktList* dFrontier);
         OBJECTIVE objective(cktList* dFrontier);
         OBJECTIVE backtrace(OBJECTIVE kv);
@@ -44,24 +44,24 @@ class Circuit {
 
     public:
         Circuit(string filename);
-        int getMaxLevels(){return maxLevel;};
+
+        void        addFault(Fault* fault);
+        void        atpg();
+        Fault*      createFault(int nodeID, int sav);
+        faultMap*   deductiveFaultSim(faultList* fl, inputList* inputs);
+        double      faultCoverage(faultList* detectedFaults);
+        faultList   generateFaults(bool reduced);
+        LOGIC       getNodeLogic(int nodeID);
+        vector<int> getNodeIDs();
+        int         getMaxLevels(){return maxLevel;};
         vector<cktNode*> getPINodeList(){return PInodes;};
         vector<cktNode*> getPONodeList(){return POnodes;};
-        LOGIC getNodeLogic(int nodeID);
-        faultList generateFaults(bool reduced);
-        vector<int> getNodeIDs();
-        void addFault(Fault* fault);
-        Fault* createFault(int nodeID, int sav);
-        void simulate(map<int, LOGIC> *input);
-        void reset();
-        double faultCoverage(faultList* detectedFaults);
-        inputList randomTestsGen(int numTests);
-        faultMap deductiveFaultSim(faultList* fl, inputList* inputs);
 
-        inputMap* PODEM(Fault* fault);
-        void printPO();
-        
-
+        inputList   randomTestsGen(int numTests);
+        inputMap*   PODEM(Fault* fault);
+        void        printPO();
+        void        reset();
+        void        simulate(map<int, LOGIC> *input);     
 };
 
 #include "Circuit.cpp"

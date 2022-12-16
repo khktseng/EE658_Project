@@ -15,8 +15,9 @@ typedef struct testStruct {
 	int value;
 } TS;
 int main(){
-	Circuit ckt("circuits/c17.ckt");
+	Circuit ckt("circuits/c432.ckt");
 
+/*
 	cout << "Num inputs: " << ckt.getPINodeList().size() << "\n";
 	cout << "PI IDs: ";
 	for (int i = 0; i < ckt.getPINodeList().size(); i++) {
@@ -24,7 +25,8 @@ int main(){
 	}
 
 	cout << "\b\b" << " \n";
-
+	*/
+/*
 	inputMap testInp;
 	testInp[1] = ONE;
 	testInp[2] = ZERO;
@@ -32,19 +34,22 @@ int main(){
 	testInp[6] = X;
 	testInp[7] = X;
 
-	cout << "starting simulation\n";
+
+	cout << "starting simulation test\n";
 
 	ckt.simulate(&testInp);
 
-	cout << "initial sim complete\n";
+	cout << "initial sim test complete\n";
 
 	Fault* testFault = ckt.createFault(1, 0);
 	ckt.addFault(testFault);
 	ckt.simulate(&testInp);
-	ckt.printPO();
+	//ckt.printPO();
 
-	cout << "initial fault simulation complete\n";
+	*/
 
+	//cout << "initial fault simulation test complete\n";
+	/*
 	vector<int> nodeIDs = ckt.getNodeIDs();
 	faultList faults;
 	inputList ins;
@@ -66,7 +71,8 @@ int main(){
 	cout << "# of faults : " << faults.size() << "\n";
 	cout << "# of inputs : " << ins.size() << "\n";
 
-	faultMap fm = ckt.deductiveFaultSim(&faults, &ins);
+	faultMap * fmap = ckt.deductiveFaultSim(&faults, &ins);
+	faultMap fm = *fmap;
 
 	
 	cout << "# vectors detecting a fault: " << fm.size() << "\n\n";
@@ -85,6 +91,9 @@ int main(){
 
 	cout << "Number of faults detected: " << numFaults << "\n";
 
+	cout << "\nBeginning ATPG\n";
+	*/
+	ckt.atpg();
 
 /*
 	inputMap input;
