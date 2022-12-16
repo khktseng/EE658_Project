@@ -6,6 +6,7 @@
 #include "includes.h"
 #include "defines.h"
 #include "structures.h"
+#include "readckt.h"
 
 void cread(char *);
 void pc(char *);
@@ -24,6 +25,8 @@ void atpg(char *);
 void podem(char*);
 void dalg(char*);
 void dfs(char*);
+void exit(char*);
+void simulate(char*);
 
 enum e_state {EXEC, CKTLD};         /* Gstate values */
 
@@ -47,8 +50,9 @@ struct cmdstruc command[NUMFUNCS] = {
 	{"RTG", rtg,CKTLD},
     {"PODEM", podem, CKTLD},
     {"DALG", dalg, CKTLD},
-    {"ATPG_DET", atpg_det, CKTLD},
-    {"ATPG", atpg, CKTLD},
+    {"ATPG_DET", atpg_det, EXEC},
+    {"ATPG", atpg, EXEC},
+	{"EXIT", exit, EXEC},
 	//{"WRITEALLFAULTS", writeAllFaults, CKTLD},
 };
 

@@ -179,7 +179,7 @@ void cktNode::setFault(int sav) {
 // Evaluate the two logics based on gateType
 LOGIC cktNode::eval(vector<LOGIC> args) {
     if (gateType == NOT) {return ~args[0];}
-    if (gateType == BRCH) {return args[0];}
+    if (gateType == BRCH || IPT) {return args[0];}
 
     LOGIC newVal = X;
     queue<LOGIC> notX = notXList();
@@ -229,6 +229,7 @@ LOGIC cktNode::eval(vector<LOGIC> args) {
                 break;
             default:
                 cout << "x in error\n";
+                cout << gateType << "\n";
                 return X;
                 break;
         }
@@ -260,7 +261,6 @@ LOGIC cktNode::eval(cktList args, LOGIC ci) {
 
     return eval(argList);
 }
-
 
 LOGIC cktNode::eval(LOGIC a, LOGIC b) {
     vector<LOGIC> argList = {a, b};

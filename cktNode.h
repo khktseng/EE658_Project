@@ -71,6 +71,7 @@ class cktNode {
         void resetValue();
         bool faultMatch();
         inline vector<int> getDownstreamIDs() {return downstreamIDs;};
+        inline vector<int> getUpstreamIDs() {return upstreamIDs;};
 
 };
 typedef map<int, cktNode*> cktMap;

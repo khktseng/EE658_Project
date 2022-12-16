@@ -3,11 +3,15 @@
 
 #include "Circuit.h"
 
-Circuit::Circuit(string filename) {
-    ifstream cktFile(filename.c_str());
+Circuit::Circuit(char* file) {
+    ifstream cktFile(file);
 
+    if (cktFile.fail()) {
+        cout << "File: " << file << " does not exist.\n";
+    }
+
+    string filename = file;
     vector<cktNode*> nodeList;
-
     int nodeID;
     int lineNum;
     int ntype, gtype;
@@ -76,6 +80,7 @@ Circuit::Circuit(string filename) {
     this->numNodes = lineNum ;
     this->maxLevel = 0;
     this->initialized = false;
+    this->cktName = filename;
     assert(this->numNodes == this->nodes.size());
 }
 
@@ -573,7 +578,7 @@ cktNode Circuit::getNode(int nodeID)
     {return *nodes[nodeID];}
 
 
-void Circuit::atpg() {
+double Circuit::atpg() {
     int numRandom = PInodes.size() * 4;
 
     cout << "Generating random faults...\n";
@@ -589,7 +594,21 @@ void Circuit::atpg() {
         randomF->insert(randomF->end(), randomFD->at(it->first)->begin(), randomFD->at(it->first)->end());
     }
 
-    cout << faultCoverage(randomF) << "\n";
+    return faultCoverage(randomF);
+}
+
+double Circuit::atpg_det() {
+    faultList faults = this->generateFaults(true);
+    inputList testVectors;
+    faultList detectedFaults;
+    for (int i = 0; i < faults.size(); i++) {
+      inputMap* tv = this->PODEM(faults[i]);
+      if (tv != NULL) {
+         testVectors.push_back(tv);
+         detectedFaults.push_back(faults[i]);
+      }
+   }
+   return faultCoverage(&detectedFaults);
 }
 
 string Circuit::getCktName() {

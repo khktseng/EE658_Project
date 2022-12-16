@@ -42,6 +42,7 @@ int Nnodes;                     /* number of nodes */
 int Npi;                        /* number of primary inputs */
 int Npo;                        /* number of primary outputs */
 int Ngates;
+int Done = 0;                   /* status bit to terminate program */
 char *circuitName;
 char currentCircuit[MAXNAME];			/* Name of current circuit ex: "c17" */
 
@@ -91,6 +92,22 @@ vector<vector<char> > outputPatterns;
 
 /*------------------------------------------------------------------------*/
 
+/*-----------------------------------------------------------------------
+input: nothing
+output: nothing
+called by: shell
+description:
+  This is the main program of the simulator. It displays the prompt, reads
+  and parses the user command, and calls the corresponding routines.
+  Commands not reconized by the parser are passed along to the shell.
+  The command is executed according to some pre-determined sequence.
+  For example, we have to read in the circuit description file before any
+  action commands.  The code uses "Gstate" to check the execution
+  sequence.
+  Pointers to functions are used to make function calls which makes the
+  code short and clean.
+-----------------------------------------------------------------------*/
+
 /*------------------------------------------------------------*/
 /*------  ATPG Deterministic  --------------------------------*/
 /*------------------------------------------------------------*/
@@ -124,7 +141,7 @@ void ATPG_DET(char *cp){
 	////////////////////////////////////	
 	
 	//  Create the reduced fault list
-	reducedFL();
+	reduced_fault_list();
 	
 	// Clear out input pattern vector
 	inputPatterns.clear();
@@ -1369,7 +1386,7 @@ void DEBUG(char *cp){
 /*----------------------------------------------------*/
 /*------Parallel Fault Simulation -------------------*/
 /*----------------------------------------------------*/
-void parallelFS(char *cp)
+void pfs(char *cp)
 {
 	//  Parallel fault simulation wrapper
 	char patternFile[MAXLINE];
@@ -1402,7 +1419,7 @@ void parallelFS(char *cp)
 	//  Test patterns saved to:
 	//     	vector<int> "PI_list";
 	//		vector<vector<char> > "inputPatterns";
-	fileOK = rtp(patternFile);
+	fileOK = readTestPatterns(patternFile);
 	if(!fileOK){return;}
 	
 	//// --- Debug -------------
@@ -1745,7 +1762,7 @@ description:
 	to the PI of the first row.
   
 -----------------------------------------------------------------------*/
-void lSim(char *cp)
+void logicSim(char *cp)
 {
 	// Perform a logic simulation
 	//  Some counters and temp variables
@@ -1770,7 +1787,7 @@ void lSim(char *cp)
 	//  Test patterns saved to:
 	//     	vector<int> PI_list;
 	//		vector<vector<char> > inputPatterns;
-	bool fileOK = rtp(patternFile);
+	bool fileOK = readTestPatterns(patternFile);
 	if(!fileOK){return;}
 	
 	//// --- Debug -------------
@@ -1822,7 +1839,7 @@ void multi_dfs(char *cp){
 	printf("Output Results: %s\n",writeFile);
 	///////////////////
 	
-	rtp(readFile);
+	readTestPatterns(readFile);
 	
 	for(np = NodeV.begin(); np!= NodeV.end(); np++){
 			if(np->ref > max){
@@ -2467,7 +2484,57 @@ void addOutputPattern(int n_patterns){
 	
 }
 
-void reducedFL(void){
+void rfl(char *cp)
+{
+	//std::vector<NSTRUC>::iterator np;
+	//int checkpoints = Npi;
+	//int j;
+	FILE *fptr;
+	char writeFile[MAXLINE];
+	sscanf(cp, "%s", writeFile);
+	
+	//Debug//////////////
+	printf("\nReduced Fault List\n");
+	printf("Output File: %s\n",writeFile);
+	///////////////////////
+	
+	// Run reduced fault list routine
+	//  Populates FaultV
+	reduced_fault_list();
+	
+	
+	fptr = fopen(writeFile,"w");
+	if(fptr == NULL) {
+		printf("File %s cannot be written!\n", writeFile);
+		return;
+	}
+	
+	for(int i = 0;i<FaultV.size();++i){
+		fprintf(fptr, "%d@%d\n", FaultV[i].ref, FaultV[i].stuckAt);
+	}
+   
+   /*
+	for(np = NodeV.begin(); np!= NodeV.end(); np++){
+		if(np->gateType == IPT){
+			fprintf(fptr, "%d@0\n", np->indx+1);
+			fprintf(fptr, "%d@1\n", np->indx+1);
+		}
+		for(j = 0; j<np->fout; j++){
+			if(np->fout > 1)
+			{
+				fprintf(fptr,"%d@0\n",np->downNodes[j]);
+				fprintf(fptr,"%d@1\n",np->downNodes[j]);
+			}
+		}
+	}
+	*/
+	fclose(fptr);
+	
+	//  Print "OK"
+	printf("\n==> OK\n");
+}
+
+void reduced_fault_list(void){
 	//  Generate the reduced fault list and populate the FaultV vector
 	std::vector<NSTRUC>::iterator np;
 	FSTRUC fault;
@@ -2573,6 +2640,7 @@ void _cread(char *cp)
 	getCircuitNameFromFile(buf);
 	
 	//  If another circuit is already loaded, clear it
+	if(Gstate >= CKTLD) clear();
 	
 	//  Step through each line and parse the node	
 	fseek(fd, 0L, 0);
@@ -2662,6 +2730,7 @@ void _cread(char *cp)
 	levelizeNodes();
    
 	//  Done; circuit is loaded
+	Gstate = CKTLD;
 	
 	printf("Parsed circuit %s\n", currentCircuit);
 	printf("==> OK\n");
@@ -2827,7 +2896,7 @@ bool readFaultList(char *faultFile){
 	return true;
 }
 
-bool rtp(char *patternFile){
+bool readTestPatterns(char *patternFile){
 	//  Read test patternf ile
 	//  First line is list of PI's
 	//  Subsequent lines are logic corresponding to those PI's.
@@ -3148,6 +3217,17 @@ NSTRUC *getNodePtr(int ref){
 	return &NodeV[ref2index[ref]];
 }
 
+/*-----------------------------------------------------------------------
+input: nothing
+output: nothing
+called by: main 
+description:
+  Set Done to 1 which will terminates the program.
+-----------------------------------------------------------------------*/
+void quit(char*)
+{
+   Done = 1;
+}
 
 /*======================================================================*/
 
@@ -3174,6 +3254,7 @@ void clear(void)
    ref2index.clear();
    PI_list.clear();
    inputPatterns.clear();
+   Gstate = EXEC;
 }
 
 
@@ -3224,6 +3305,43 @@ void _pc(char *cp)
    
 }
 
+void printNode(char *nodeStr){
+	//  Simple function to print the node
+	//  >>printnode 22
+	int a[64], i, k, nodeRef;
+	int n;
+	
+	stringstream temp(nodeStr);
+	temp>>nodeRef;
+	
+	if(nodeRef>(ref2index.size()-1)){
+		printf("\n Node %d out of range\n",nodeRef);
+		return;
+	}
+	NSTRUC *np;
+	np = getNodePtr(nodeRef);
+	printf("Node %d:\n",np->ref);
+	printf("  Gate Type: %s\n",gname(np->gateType));
+	printf("  Node Type: %s\n",nname(np->nodeType));	
+	printf("  Level: %d\n", np->level);
+	printf("  Logic:\n   ");
+	for(k=0;k<3;k++){
+		n = np->logic3[k];
+		// Loop to calculate and store the binary format
+		for (i = 0; i<bitWidth; i++) {
+			a[bitWidth-i-1] = n & 1;
+			n = n>>1;
+		}
+		// Loop to print the binary format of given number
+		for (i = 0;i<bitWidth;++i) 
+		{
+			printf("%d", a[i]);
+		}
+		printf("\n   ");
+	}
+	
+}
+
 void printInputPatterns(void){
 	int j, k;
 	printf("PI List:\n");
@@ -3271,7 +3389,6 @@ const char *logicname(int tp)
       case 6: return("NAND");
       case 7: return("AND");
 	  case 8: return("XNOR");
-	  default: return("LOGICNAME_ERROR");
    }
 }
 
@@ -3289,7 +3406,6 @@ const char *gname(int tp)
       case 6: return("NAND");
       case 7: return("AND");
 	  case 8: return("XNOR");
-	  default: return("GNAME_ERROR");
    }
 }
 
@@ -3300,7 +3416,6 @@ const char *nname(int tp)
       case 1: return("PI");
       case 2: return("FB");
       case 3: return("PO");
-	  default: return("NNAME_ERROR");
    }
 }
 
