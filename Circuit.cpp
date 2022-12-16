@@ -103,6 +103,18 @@ void Circuit::linkNodes(){
 void Circuit::verifyLink() {
     for(cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
         cktNode *checkNode = it->second;
+
+        placeholder();
+
+        if (checkNode->getUpstreamList().size() != checkNode->getNumFanIns()) {
+            cout << checkNode->getNodeID() << " failed usptream \n";        
+        }
+
+        if (checkNode->getDownstreamList().size() != checkNode->getNumFanOuts()) {
+            cout << checkNode->getNodeID() << " failed downstream\n";
+        }
+
+
         assert(checkNode->getUpstreamList().size() == checkNode->getNumFanIns());
         assert(checkNode->getDownstreamList().size() == checkNode->getNumFanOuts());
     }
@@ -269,18 +281,18 @@ Fault* Circuit::createFault(int nodeID, int sav) {
 
 
 double Circuit::faultCoverage(faultList* detectedFaults) {
-    double totalFaults = nodes.size() * 2;
-    return detectedFaults->size() / ((double)nodes.size() * 2.0);
+    double totalFaults = generateFaults(true).size();
+    return detectedFaults->size() / totalFaults;
 }
 
 
-inputMap Circuit::randomTestGen() {
+inputMap* Circuit::randomTestGen() {
     int numPIs = PInodes.size();
     ulong randomBits = rand() % (int(pow(2, numPIs)));
-    inputMap test;
+    inputMap* test = new inputMap();
 
     for (int i = 0; i < numPIs; i++) {
-        test[PInodes[i]->getNodeID()] = (LOGIC)(randomBits & 0b1);
+        (*test)[PInodes[i]->getNodeID()] = (LOGIC)(randomBits & 0b1);
         randomBits = randomBits >> 1;
     }
 
@@ -290,24 +302,19 @@ inputMap Circuit::randomTestGen() {
 
 inputList Circuit::randomTestsGen(int numTest) {
     inputList tests;
-    inputMap test;
     for (int i = 0; i < numTest; i++) {
-        test = randomTestGen();
-        tests.push_back(&test);
+        tests.push_back(randomTestGen());
     }
     return tests;
 }
 
 
-faultMap Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
-    faultMap detectedFaults;
+faultMap* Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
+    faultMap* detectedFaults = new faultMap();
     bool faultDetected;
 
     Fault* currFault;
     inputMap* currInput;
-
-    cout << fl->size() << "\n";
-    cout << ins->size() << "\n";
 
     for (int i = 0; i < fl->size(); i++) {
         faultDetected = false;
@@ -321,22 +328,20 @@ faultMap Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
             this->simulate(currInput);
 
             if (faultAtPO()) {
-                if (detectedFaults[currInput] == NULL) {
-                    cout << "creating new faultList \n";
-                    detectedFaults[currInput] = new faultList();
+                if (!(detectedFaults->count(currInput))) {
+                    detectedFaults->insert(pair<inputMap*,faultList*>(currInput, new faultList()));
                 }
-                detectedFaults[currInput]->push_back(currFault);
+                detectedFaults->at(currInput)->push_back(currFault);
                 faultDetected = true;
                 //cout << "Fault " << currFault << " detected by " << currInput << "\n";
             }
         }
 
+        /*
         if (!faultDetected) {
              cout << "fault " << currFault << " not detected\n";
-        }
+        }*/
     }
-
-    cout << detectedFaults.size() << "\n";
 
     return detectedFaults;
 }
@@ -465,7 +470,7 @@ bool Circuit::xPathCheck(cktNode* node) {
     return false;
 }
 
-void placeholder() {
+void Circuit::placeholder() {
     int x = 10;
 }
 
@@ -501,7 +506,7 @@ inputMap* Circuit::PODEM(Fault* fault) {
     if (podem(fault, &dFrontier)) {
         inputMap* testVector = new inputMap();
         for (int i = 0; i < PInodes.size(); i++) {
-            (*testVector)[PInodes[i]->getNodeID()] = PInodes[i]->getTrueValue();
+            testVector->insert(pair<int, LOGIC>(PInodes[i]->getNodeID(), PInodes[i]->getTrueValue()));
         }
         return testVector;
     } else {
@@ -563,4 +568,24 @@ bool Circuit::podem(Fault* fault, cktList* dFrontier) {
 
 cktNode Circuit::getNode(int nodeID)
     {return *nodes[nodeID];}
+
+
+void Circuit::atpg() {
+    int numRandom = PInodes.size() * 4;
+
+    cout << "Generating random faults...\n";
+    faultList reducedFaults = generateFaults(true);
+    inputList randomInputs = randomTestsGen(numRandom);
+
+    faultMap * randomFD = deductiveFaultSim(&reducedFaults, &randomInputs);
+    inputMap * firstInput = randomInputs[0];
+
+    faultList * randomF = new faultList();
+
+    for (faultMap::iterator it = randomFD->begin(); it != randomFD->end(); ++it) {
+        randomF->insert(randomF->end(), randomFD->at(it->first)->begin(), randomFD->at(it->first)->end());
+    }
+
+    cout << faultCoverage(randomF) << "\n";
+}
 
