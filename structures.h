@@ -98,5 +98,6 @@ typedef struct fault_struc{
 	vector<int> faultFound; // -1 = not found; else, is index of pattern
 } FSTRUC;
 
+const int bitWidth = 8*sizeof(int);
 
 #endif
