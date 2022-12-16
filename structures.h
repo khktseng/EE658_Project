@@ -36,6 +36,7 @@ inline ostream &operator<<(ostream &str, gateT gate) {
 		case AND: str << "AND";		break;
 		case XNOR: str << "XNOR";	break;
 		case NOT: str << "NOT";		break;
+		default: str << "GATET_X";	break;
 	}
 	return str;
 }

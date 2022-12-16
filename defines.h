@@ -8,7 +8,7 @@
 #define BIT0(num) ((num) & 0b01)
 #define BIT1(num) ((num) & 0b10)
 
-#define NUMFUNCS 15
+#define NUMFUNCS 17
 #define MAXLINE 100               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
 #define N_DROP	5	  	//Drop faults after detected this many times

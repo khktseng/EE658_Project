@@ -24,6 +24,7 @@ class Circuit {
         int numNodes;
         int numGates;
         bool initialized;
+        char cstringName[MAXLINE];
 
         void linkNodes();
         void levelize(cktNode *currNode, int curr_level);
@@ -45,11 +46,12 @@ class Circuit {
         void resetPO();
 
     public:
-        Circuit(string filename);
+        Circuit(char* filename);
 
-        cktNode getNode(int nodeID);
+        cktNode     getNode(int nodeID);
         void        addFault(Fault* fault);
-        void        atpg();
+        double      atpg();
+        double      atpg_det();
         Fault*      createFault(int nodeID, int sav);
         faultMap*   deductiveFaultSim(faultList* fl, inputList* inputs);
         double      faultCoverage(faultList* detectedFaults);
