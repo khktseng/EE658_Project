@@ -14,6 +14,7 @@ typedef struct objective_s{
 
 class Circuit {
     private:
+        string cktName;
         cktMap nodes;
         map<int, cktList> levNodes;
         int maxLevel;
@@ -21,6 +22,7 @@ class Circuit {
         cktList POnodes;
         cktList FBnodes;
         int numNodes;
+        int numGates;
         bool initialized;
 
         void linkNodes();
@@ -36,7 +38,7 @@ class Circuit {
         OBJECTIVE backtrace(OBJECTIVE kv);
         void backwardsImplication(cktNode* root);
         bool faultAtPO();
-        cktNode getNode(int nodeID);
+        
         bool xPathCheck(cktNode* node);
         bool xPathCheck(cktList* dFrontier);
         void placeholder();
@@ -45,6 +47,7 @@ class Circuit {
     public:
         Circuit(string filename);
 
+        cktNode getNode(int nodeID);
         void        addFault(Fault* fault);
         void        atpg();
         Fault*      createFault(int nodeID, int sav);
@@ -61,7 +64,17 @@ class Circuit {
         inputMap*   PODEM(Fault* fault);
         void        printPO();
         void        reset();
-        void        simulate(map<int, LOGIC> *input);     
+        void        simulate(map<int, LOGIC> *input);
+
+        inline cktMap getNodes() {return nodes;};     
+        inline int getNumPI() {return PInodes.size();};
+        inline int getNumPO() {return POnodes.size();};
+        inline int getNumNodes() {return nodes.size();};
+        inline int getNumGates() {return numGates;};
+        string getCktName();
+        inputMap * createInputVector(vector<int> nodeIDs, vector<int> inputs);
+        vector<int> getPOs();
+        
 };
 
 #include "Circuit.cpp"

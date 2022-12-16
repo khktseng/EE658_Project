@@ -38,7 +38,6 @@ Circuit Simulator and ATPG
 #include "readckt.h"        
 
 /*----------------Global Variables-----------------------------------------*/
-enum e_state Gstate = EXEC;     /* global exectution sequence */
 int Nnodes;                     /* number of nodes */
 int Npi;                        /* number of primary inputs */
 int Npo;                        /* number of primary outputs */
@@ -81,7 +80,7 @@ int cycleCounter = 0;
 
 
 vector< pair<int,int> > nodeQueue; //  First->level, second->node reference
-const int bitWidth = 8*sizeof(int);
+
 bool eventDriven = true;
 
 //  Fault Lists
@@ -108,37 +107,7 @@ description:
   Pointers to functions are used to make function calls which makes the
   code short and clean.
 -----------------------------------------------------------------------*/
-int main()
-{
-   uint8_t com;
-   char cline[MAXLINE], wstr[MAXLINE], *cp;
-	
-	printf("EE658 Fault/Logic Simulator, Group 14\n");
-	printf("This processor bit width: %d\n", bitWidth);
-	
-	/* initialize random seed: */
-	srand(time(NULL));
-	
-   while(!Done) {
-      printf("\nCommand>");
-      fgets(cline, MAXLINE, stdin);
-      if(sscanf(cline, "%s", wstr) != 1) continue;
-      cp = wstr;
-      while(*cp){
-	*cp= Upcase(*cp);
-	cp++;
-      }
-      cp = cline + strlen(wstr);
-      //com = READ;
-	  com = 0;
-      while(com < NUMFUNCS && strcmp(wstr, command[com].name)) com++;
-      if(com < NUMFUNCS) {
-         if(command[com].state <= Gstate) (*command[com].fptr)(cp);
-         else printf("Execution out of sequence!\n");
-      }
-      else system(cline);
-   }
-}
+
 /*------------------------------------------------------------*/
 /*------  ATPG Deterministic  --------------------------------*/
 /*------------------------------------------------------------*/
@@ -147,7 +116,6 @@ void ATPG_DET(char *cp){
 	//  ATPG_DET
 	//  Read in formt:
 	//     ATPG_DET <circuit-name> <alg-name DALG/PODEM>
-	// Note:  At this time, only "DALG" works
 	struct timeval begin, end;
 	char circuitStr[MAXLINE];
 	char algType[MAXLINE];
@@ -158,7 +126,7 @@ void ATPG_DET(char *cp){
     gettimeofday(&begin, 0);
 	
 	//  Read this circuit
-	cread(circuitStr);
+	//cread(circuitStr);
 	
 	//Debug //////////
 	printf("\nATPG DETERMINISTIC\n");
@@ -2611,7 +2579,40 @@ description:
   This routine reads in the circuit description file and set up all the
   required data structure.
 -----------------------------------------------------------------------*/
-void cread(char *cp)
+
+void genNodeIndex(void){
+	//  Regenerates reference vectors of the global NodeV vector
+	//  ref2index supplies the index for a given reference #
+	
+	vector<NSTRUC>::iterator nodeIter;
+	int i;
+	
+	//  Clear vectors first
+	ref2index.clear();
+	
+
+	//  Find the maximum value of the reference #
+	int maxRef = 0;
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		if(nodeIter->ref>maxRef){
+			maxRef = nodeIter->ref;
+		}
+	}
+	
+	//  Create the ref2index array
+	//  First initialize with 0;
+	for(i=0;i<=maxRef;i++){
+		ref2index.push_back(0);
+	}
+	//  Now enter the reference numbers
+	i = 0;
+	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
+		ref2index[nodeIter->ref] = i++;
+	}
+
+}
+
+void _cread(char *cp)
 {
 	char buf[MAXLINE];
 	int  i, j, k, ref = 0;
@@ -2735,38 +2736,6 @@ void cread(char *cp)
 	printf("==> OK\n");
 }
 
-void genNodeIndex(void){
-	//  Regenerates reference vectors of the global NodeV vector
-	//  ref2index supplies the index for a given reference #
-	
-	vector<NSTRUC>::iterator nodeIter;
-	int i;
-	
-	//  Clear vectors first
-	ref2index.clear();
-	
-
-	//  Find the maximum value of the reference #
-	int maxRef = 0;
-	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
-		if(nodeIter->ref>maxRef){
-			maxRef = nodeIter->ref;
-		}
-	}
-	
-	//  Create the ref2index array
-	//  First initialize with 0;
-	for(i=0;i<=maxRef;i++){
-		ref2index.push_back(0);
-	}
-	//  Now enter the reference numbers
-	i = 0;
-	for (nodeIter=NodeV.begin();nodeIter!=NodeV.end();++nodeIter){
-		ref2index[nodeIter->ref] = i++;
-	}
-
-}
-
 
 /*---------------- Levelization ------------------------------------------
 input: string for name of file to be written
@@ -2865,7 +2834,7 @@ void getCircuitNameFromFile(char *fileName){
 	
 }
 
-void lev(char *cp)
+void _lev(char *cp)
 {
 	int i, j, k;
 	//NSTRUC *np;
@@ -3299,7 +3268,7 @@ description:
   The routine prints out the circuit description from previous READ command.
 -----------------------------------------------------------------------*/
 
-void pc(char *cp)
+void _pc(char *cp)
 {
 	int i, j;
    
@@ -3450,7 +3419,7 @@ const char *nname(int tp)
    }
 }
 
-void help(char*)
+void _help(char*)
 {
    printf("READ filename - ");
    printf("read in circuit file and creat all data structures\n");

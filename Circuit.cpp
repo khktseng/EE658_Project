@@ -18,6 +18,7 @@ Circuit::Circuit(string filename) {
     int usID;
     vector<int> *upstreamIDs;
     int downstreamID;
+    int numGates;
 
     cktNode *currNode;
     string currLine;
@@ -35,6 +36,7 @@ Circuit::Circuit(string filename) {
             switch (nodeType) {
                 case PO:
                 case GATE:
+                    numGates++;
                     ss >> numFanOuts >> numFanIns;
                     while (ss >> usID) {
                         usIDs.push_back(usID);
@@ -65,6 +67,7 @@ Circuit::Circuit(string filename) {
             lineNum++;
         }
 
+        cktName = filename;
         linkNodes();
         verifyLink(); //assert
         levelize();
@@ -589,3 +592,28 @@ void Circuit::atpg() {
     cout << faultCoverage(randomF) << "\n";
 }
 
+string Circuit::getCktName() {
+    return this->cktName;
+}
+
+inputMap* Circuit::createInputVector(vector<int> nodeIDs, vector<int> inputs) {
+    inputMap* newInput = new inputMap();
+    assert(nodeIDs.size() == inputs.size());
+
+    for (int i = 0; i < nodeIDs.size(); i++) {
+        LOGIC newI;
+        switch (inputs[i]) {
+            case 0:
+                newI = ZERO;
+                break;
+            case 1:
+                newI = ONE;
+                break;
+            default:
+                newI = X;
+                break;
+        }
+        newInput->insert(pair<int, LOGIC>(nodeIDs[i], newI));
+    }
+    return newInput;
+}
