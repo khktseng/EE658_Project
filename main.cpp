@@ -165,7 +165,10 @@ void lev(char *cp) {
 		printf("==> Writing file: %s\n",buf);
 	}
 
-   fprintf(fptr, "%s\n", ckt->getCktName());
+   char cname[MAXLINE];
+   sprintf(cname, "%s", ckt->getCktName().c_str());
+
+   fprintf(fptr, "%s\n", cname);
    fprintf(fptr, "#PI: %d\n", ckt->getNumPI());
    fprintf(fptr, "#PO: %d\n", ckt->getNumPO());
    fprintf(fptr, "#Nodes: %d\n", ckt->getNodes().size());
@@ -310,7 +313,9 @@ void dfs(char* cp) {
 		printf("==> Writing file: %s\n", writeFile);
 	}
 
-   fprintf(fptr, "%s\n", ckt->getCktName());
+   char cname[MAXLINE];
+   sprintf(cname, "%s", ckt->getCktName().c_str());
+   fprintf(fptr, "%s\n", cname);
    fprintf(fptr, "# of Vectors that detected a fault: %d", faultSimResults->size());
    int testNum = 0;
 	int numFaults = 0;
@@ -362,6 +367,55 @@ void podem(char* cp) {
    printf("==> OK\n");
 }
 
+void podemATPGReport(double fc, double elapsedTime, inputSet* testVectors) {
+   FILE* fptr;
+   FILE* pFile;
+   char fileName[MAXLINE];
+   char patternFile[MAXLINE];
+   sprintf(fileName, "ATPG_OUT/%s_PODEM_ATPG_report.txt", ckt->getCktName().c_str());
+   sprintf(patternFile, "ATPG_OUT/%s_PODEM_ATPG_patterns.txt", ckt->getCktName().c_str());
+   fptr = fopen(fileName, "w");
+   pFile = fopen(patternFile, "w");
+
+   if(fptr == NULL) {
+      printf("File %s cannot be written.\n", fileName);
+      return;
+   }
+
+   if(pFile == NULL) {
+      printf("File %s cannot be written.\n", patternFile);
+      return;
+   }
+
+   for(int i = 0; i < ckt->getNumPI(); i++) {
+      for (inputMap::iterator it = (*testVectors->begin())->begin();
+            it != (*testVectors->begin())->end(); ++it) {
+         fprintf(pFile, "%d ", it->first);
+      }
+   }
+
+   fprintf(pFile, "\n");
+   int temp;
+   for (inputSet::iterator iset = testVectors->begin(); iset != testVectors->end(); ++iset) {
+      for(inputMap::iterator it = (*iset)->begin(); 
+                  it != (*iset)->end(); ++it){
+         stringstream ss;
+         ss << (LOGIC)it->second;
+         fprintf(pFile, "%s ", ss.str().c_str());
+      }
+      fprintf(pFile, "\n");
+   }
+
+   fprintf(fptr, "\nAlgorithm: PODEM\n");
+   fprintf(fptr, "Circuit: %s\n", ckt->getCktName().c_str());
+   fprintf(fptr, "Fault Coverage: %f\%\n", fc);
+   fprintf(fptr, "Time: %0.3f\n", elapsedTime);
+   printf("\n==> Writing ATPG report: %s\n",fileName);
+   fclose(fptr);
+   fclose(pFile);
+}
+
+
 void atpg_det(char* cp) {
    char cktFile[MAXLINE];
    char alg[MAXLINE];
@@ -370,7 +424,7 @@ void atpg_det(char* cp) {
    string algorithm = alg;
    double fc;
    struct timeval begin, end;
-   inputList testVectors;
+   inputSet testVectors;
    if (algorithm.compare("PODEM") != 0 && algorithm.compare("podem") != 0) {
       printf("Starting DAlg...\n");
       ATPG_DET(cp);
@@ -403,7 +457,7 @@ void atpg(char* cp) {
    string algorithm = alg;
    struct timeval begin, end;
    double fc;
-   inputList testVectors;
+   inputSet testVectors;
    bool Dalg = false;
    if (Dalg && (strchr(alg,'p') != NULL || strchr(alg, 'P'))) {
       printf("Starting Dalg based ATPG...\n");
@@ -479,51 +533,6 @@ void rtg(char* cp) {
 void pfs(char* cp) {}
 void dalg(char* cp) {
    DALG(cp);
-}
-
-void podemATPGReport(double fc, double elapsedTime, inputList* testVectors) {
-   FILE* fptr;
-   FILE* pFile;
-   char fileName[MAXLINE];
-   char patternFile[MAXLINE];
-   sprintf(fileName, "ATPG_OUT/%s_PODEM_ATPG_report.txt", ckt->getCktName().c_str());
-   sprintf(patternFile, "ATPG_OUT/%s_PODEM_ATPG_patterns.txt", ckt->getCktName().c_str());
-   fptr = fopen(fileName, "w");
-   pFile = fopen(patternFile, "w");
-
-   if(fptr == NULL) {
-      printf("File %s cannot be written.\n", fileName);
-      return;
-   }
-
-   if(pFile == NULL) {
-      printf("File %s cannot be written.\n", patternFile);
-      return;
-   }
-
-   for (inputMap::iterator it = testVectors->at(0)->begin();
-         it != testVectors->at(0)->end(); ++it) {
-      fprintf(pFile, "%d ", it->first);
-   }
-   fprintf(pFile, "\n");
-   int temp;
-   for (int i = 1; i < testVectors->size(); i++) {
-      for(inputMap::iterator it = testVectors->at(i)->begin(); 
-                  it != testVectors->at(i)->end(); ++it){
-         stringstream ss;
-         ss << (LOGIC)it->second;
-         fprintf(pFile, "%s ", ss.str().c_str());
-      }
-      fprintf(pFile, "\n");
-   }
-
-   fprintf(fptr, "\nAlgorithm: PODEM\n");
-   fprintf(fptr, "Circuit: %s\n", ckt->getCktName().c_str());
-   fprintf(fptr, "Fault Coverage: %f\%\n", fc);
-   fprintf(fptr, "Time: %0.3f\n", elapsedTime);
-   printf("\n==> Writing ATPG report: %s\n",fileName);
-   fclose(fptr);
-   fclose(pFile);
 }
 
 void exit(char*) {

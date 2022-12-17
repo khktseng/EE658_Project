@@ -96,7 +96,6 @@ void Circuit::resetPO() {
     }
 }
 
-
 void Circuit::printPO() {
     cout <<"<";
     for(int i = 0; i < POnodes.size(); i++) {
@@ -105,14 +104,12 @@ void Circuit::printPO() {
     cout << ">\n";
 }
 
-
 void Circuit::linkNodes(){
     //link all upstream nodes for each node first
     for(cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
         it->second->link(&nodes);
     }
 }
-
 
 void Circuit::verifyLink() {
     for(cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
@@ -262,9 +259,26 @@ faultSet Circuit::rflCheckpoint() {
     return reducedFaultList;
 }
 
+faultSet Circuit::collapseFaults(faultSet faults) {
+    faultSet reducedFaults;
+    for (faultSet::iterator it = faults.begin(); it != faults.end(); ++it) {
+        Fault* rFault = equivalentFault((*it)->getNode(), (*it)->getSAV());
+        reducedFaults.insert(rFault);
+    }
+
+    return reducedFaults;
+}
+
+// Finds the highest level equivalent fault
+Fault* Circuit::equivalentFault(cktNode* faultNode, int sav) {
+    if (faultNode->getNumFanOuts() == 1) {
+        return equivalentFault(faultNode->getDownstreamList()[0], sav);
+    }
+    return new Fault(faultNode, sav);
+}
 
 faultSet Circuit::generateFaults(bool reduced) {
-    if (reduced) { return rflCheckpoint();}
+    if (reduced) {return rflCheckpoint();}
 
     faultSet faults;
     for (cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
@@ -581,7 +595,7 @@ cktNode Circuit::getNode(int nodeID)
     {return *nodes[nodeID];}
 
 
-double Circuit::atpg(inputList* testVectors) {
+double Circuit::atpg(inputSet* testVectors) {
     faultSet reducedFaults = generateFaults(true);
     faultSet detectedFaults;
 
@@ -604,7 +618,7 @@ double Circuit::atpg(inputList* testVectors) {
         for (set<Fault*>::iterator it = detectedFaults.begin(); it != detectedFaults.end(); ++it) {
             uniqueFaults.push_back(*it);
         }
-        testVectors->push_back(randomInputs[0]);
+        testVectors->insert(randomInputs[0]);
         fcPrev = fc;
         fc = faultCoverage(&detectedFaults);
         numRandom++;
@@ -615,20 +629,20 @@ double Circuit::atpg(inputList* testVectors) {
     for (faultSet::iterator it = reducedFaults.begin(); it != reducedFaults.end(); ++it) {
         inputMap* newTV = this->PODEM(*it);
         if (newTV != NULL) {
-            testVectors->push_back(newTV);
+            testVectors->insert(newTV);
             detectedFaults.insert(*it);
         }
     }
     return faultCoverage(&detectedFaults);
 }
 
-double Circuit::atpg_det(inputList * testVectors) {
+double Circuit::atpg_det(inputSet * testVectors) {
     faultSet faults = this->generateFaults(true);
     faultSet detectedFaults;
     for (faultSet::iterator it = faults.begin(); it != faults.end(); ++it) {
       inputMap* tv = this->PODEM(*it);
       if (tv != NULL) {
-         testVectors->push_back(tv);
+         testVectors->insert(tv);
          detectedFaults.insert(*it);
       }
    }
