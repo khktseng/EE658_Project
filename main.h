@@ -27,7 +27,7 @@ void dalg(char*);
 void dfs(char*);
 void exit(char*);
 
-void podemATPGReport(double fc, double time, inputList* testVectors);
+void podemATPGReport(double fc, double time, inputSet* testVectors);
 
 enum e_state {EXEC, CKTLD};         /* Gstate values */
 

@@ -12,7 +12,6 @@ class Fault {
     private:
         cktNode* node_a;
         int stuckAtValue;
-        set<Fault*>* equivalentFaults;
 
     public:
         Fault(cktNode* na, int sav);

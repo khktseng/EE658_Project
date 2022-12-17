@@ -67,6 +67,7 @@ inline ostream &operator<<(ostream &str, LOGIC l) {
 typedef map<int, LOGIC> inputMap;
 typedef vector<inputMap*> inputList;
 typedef queue<inputMap*> inputQ;
+typedef set<inputMap*> inputSet;
 
 inline ostream &operator<<(ostream &str, inputMap* ins) {
     str << "<";

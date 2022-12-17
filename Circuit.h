@@ -45,13 +45,16 @@ class Circuit {
         void placeholder();
         void resetPO();
 
+        faultSet collapseFaults(faultSet faults);
+        Fault* equivalentFault(cktNode* faultNode, int sav);
+
     public:
         Circuit(char* filename);
 
         cktNode     getNode(int nodeID);
         void        addFault(Fault* fault);
-        double      atpg(inputList* testVectors);
-        double      atpg_det(inputList* testVectors);
+        double      atpg(inputSet* testVectors);
+        double      atpg_det(inputSet* testVectors);
         Fault*      createFault(int nodeID, int sav);
         faultMap*   deductiveFaultSim(faultSet* fl, inputList* inputs);
         double      faultCoverage(faultSet* detectedFaults);

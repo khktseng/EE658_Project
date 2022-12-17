@@ -2,4 +2,4 @@
 Algorithm: PODEM
 Circuit: c880
 Fault Coverage: 0.967775%
-Time: 6.573
+Time: 5.472
