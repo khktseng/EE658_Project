@@ -15,7 +15,8 @@ typedef struct testStruct {
 	int value;
 } TS;
 int main(){
-	Circuit ckt("circuits/c432.ckt");
+	string file = "circuits/add2.ckt";
+	Circuit ckt(const_cast<char*>(file.c_str()));
 
 /*
 	cout << "Num inputs: " << ckt.getPINodeList().size() << "\n";
@@ -49,9 +50,9 @@ int main(){
 	*/
 
 	//cout << "initial fault simulation test complete\n";
-	/*
+	
 	vector<int> nodeIDs = ckt.getNodeIDs();
-	faultList faults;
+	faultSet faults;
 	inputList ins;
 
 	cout << "# of nodes : " << nodeIDs.size() << "\n";
@@ -63,7 +64,7 @@ int main(){
 			
 			Fault* fault = ckt.createFault(nodeIDs[i], j);
 			inputMap* test = ckt.PODEM(fault);
-			faults.push_back(fault);
+			faults.insert(fault);
 			if (test != NULL) ins.push_back(test);
 		}
 	}
@@ -91,9 +92,8 @@ int main(){
 
 	cout << "Number of faults detected: " << numFaults << "\n";
 
-	cout << "\nBeginning ATPG\n";
-	*/
-	ckt.atpg();
+	//cout << "\nBeginning ATPG\n";
+	//ckt.atpg();
 
 /*
 	inputMap input;

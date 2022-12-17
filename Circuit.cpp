@@ -304,7 +304,7 @@ inputMap* Circuit::randomTestGen() {
     inputMap* test = new inputMap();
 
     for (int i = 0; i < numPIs; i++) {
-        (*test)[PInodes[i]->getNodeID()] = (LOGIC)(randomBits & 0b1);
+        (*test)[PInodes[i]->getNodeID()] = (LOGIC)(randomBits & 0b001);
         randomBits = randomBits >> 1;
     }
 
@@ -335,6 +335,8 @@ faultMap* Circuit::deductiveFaultSim(faultSet* fl, inputList* ins) {
             this->addFault(currFault);
             currInput = *it;
             this->simulate(currInput);
+
+            //cout << currFault << " " << currInput << "\n";
 
             if(faultAtPO()) {
                 if (!detectedFaults->count(currInput)) {
@@ -509,7 +511,11 @@ inputMap* Circuit::PODEM(Fault* fault) {
     if (podem(fault, &dFrontier)) {
         inputMap* testVector = new inputMap();
         for (int i = 0; i < PInodes.size(); i++) {
-            testVector->insert(pair<int, LOGIC>(PInodes[i]->getNodeID(), PInodes[i]->getTrueValue()));
+            if (PInodes[i]->getTrueValue() == D || PInodes[i]->getTrueValue() == DB) {
+                testVector->insert(pair<int, LOGIC>(PInodes[i]->getNodeID(), X));
+            } else {
+                testVector->insert(pair<int, LOGIC>(PInodes[i]->getNodeID(), PInodes[i]->getTrueValue()));
+            }
         }
         return testVector;
     } else {
@@ -601,9 +607,10 @@ double Circuit::atpg(inputList* testVectors) {
         testVectors->push_back(randomInputs[0]);
         fcPrev = fc;
         fc = faultCoverage(&detectedFaults);
+        numRandom++;
     }
 
-    printf("Stopping random inputs at FC=%.3f and prevFC=%.3F\n", fc, fcPrev);
+    printf("Stopping random inputs on #%d with FC=%.3f and prevFC=%.3F\n", numRandom, fc, fcPrev);
 
     for (faultSet::iterator it = reducedFaults.begin(); it != reducedFaults.end(); ++it) {
         inputMap* newTV = this->PODEM(*it);

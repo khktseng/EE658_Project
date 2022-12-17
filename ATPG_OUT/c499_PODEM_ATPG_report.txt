@@ -2,4 +2,4 @@
 Algorithm: PODEM
 Circuit: c499
 Fault Coverage: 0.983165%
-Time: 2.430
+Time: 1.897

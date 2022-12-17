@@ -353,7 +353,10 @@ void podem(char* cp) {
    Fault* fault = ckt->createFault(nodeID, sav);
    inputMap* testVector = ckt->PODEM(fault);
    cout << "PODEM complete\n-----------------\n";
-
+   if (testVector == NULL) {
+      cout << "PODEM could not find a solution.\n";
+      return;
+   }
    printf("Test vector for %d@%d:\n", nodeID, sav);
    cout << testVector << "\n";
    printf("==> OK\n");
