@@ -313,7 +313,9 @@ void dfs(char* cp) {
 		printf("==> Writing file: %s\n", writeFile);
 	}
 
-   fprintf(fptr, "%s\n", ckt->getCktName());
+   char cname[MAXLINE];
+   sprintf(cname, "%s", ckt->getCktName().c_str());
+   fprintf(fptr, "%s\n", cname);
    fprintf(fptr, "# of Vectors that detected a fault: %d", faultSimResults->size());
    int testNum = 0;
 	int numFaults = 0;
