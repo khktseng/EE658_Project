@@ -12,6 +12,7 @@
 #define MAXLINE 100               /* Input buffer size */
 #define MAXNAME 31               /* File name size */
 #define N_DROP	5	  	//Drop faults after detected this many times
+#define MAXRANDOM 40
 
 #define Upcase(x) ((isalpha(x) && islower(x))? toupper(x) : (x))
 #define Lowcase(x) ((isalpha(x) && isupper(x))? tolower(x) : (x))

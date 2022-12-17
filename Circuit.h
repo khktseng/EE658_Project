@@ -31,7 +31,7 @@ class Circuit {
         void levelize();
         void verifyLink();
         void simulate(cktQ *toEvaluate, cktQ *notEvaluated, int level, cktList* dFrontier);
-        faultList rflCheckpoint();
+        faultSet rflCheckpoint();
         
         inputMap* randomTestGen();
         bool podem(Fault* fault, cktList* dFrontier);
@@ -50,12 +50,12 @@ class Circuit {
 
         cktNode     getNode(int nodeID);
         void        addFault(Fault* fault);
-        double      atpg();
-        double      atpg_det();
+        double      atpg(inputList* testVectors);
+        double      atpg_det(inputList* testVectors);
         Fault*      createFault(int nodeID, int sav);
-        faultMap*   deductiveFaultSim(faultList* fl, inputList* inputs);
-        double      faultCoverage(faultList* detectedFaults);
-        faultList   generateFaults(bool reduced);
+        faultMap*   deductiveFaultSim(faultSet* fl, inputList* inputs);
+        double      faultCoverage(faultSet* detectedFaults);
+        faultSet    generateFaults(bool reduced);
         LOGIC       getNodeLogic(int nodeID);
         vector<int> getNodeIDs();
         int         getMaxLevels(){return maxLevel;};

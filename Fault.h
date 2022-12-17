@@ -12,6 +12,7 @@ class Fault {
     private:
         cktNode* node_a;
         int stuckAtValue;
+        set<Fault*>* equivalentFaults;
 
     public:
         Fault(cktNode* na, int sav);
@@ -24,7 +25,10 @@ inline ostream &operator<<(ostream &str, Fault* fault) {
     return str;
 }
 
+
+
 typedef vector<Fault*> faultList;
+typedef set<Fault*> faultSet;
 typedef map<inputMap*, faultList*> faultMap;
 typedef queue<Fault*> faultQ;
 
