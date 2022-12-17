@@ -71,7 +71,10 @@ typedef queue<inputMap*> inputQ;
 inline ostream &operator<<(ostream &str, inputMap* ins) {
     str << "<";
     for (inputMap::iterator it = ins->begin(); it != ins->end(); ++it) {
-        str << it->first << "=" << it->second << ", ";
+        if (it != ins->begin()) {
+            str << ", ";
+        }
+        str << it->first << "=" << it->second;
     }
     str << ">";
 
