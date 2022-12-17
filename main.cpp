@@ -63,8 +63,8 @@ void help(char*)
    printf("PFS inputPatterns inputFaults outputFaultsFound - ");
    printf("Performs parallel fault simulation\n");
 
-   printf("RTG NTotal Ntfcr testPatterns FC report - ");
-   printf("Performs Random Test Generation; parallel fault simulation\n");
+   printf("RTG numTests reportFile - ");
+   printf("Performs Random Test Generation and simulation\n");
 
    printf("PODEM node sav - ");
    printf("Performs PODEM to find a test vector for node@sav\n");
@@ -283,11 +283,10 @@ void rfl(char* cp) {
 	char writeFile[MAXLINE];
 	sscanf(cp, "%s", writeFile);
 
-   faultList reducedFaults = ckt->generateFaults(true);
+   faultSet reducedFaults = ckt->generateFaults(true);
 
-   for (int i = 0; i < reducedFaults.size(); i++) {
-      fprintf(fptr, "%d@%d\n", reducedFaults[i]->getNode()->getNodeID(),
-                  reducedFaults[i]->getSAV());
+   for (faultSet::iterator it = reducedFaults.begin(); it != reducedFaults.end(); ++it) {
+      fprintf(fptr, "%d@%d\n", (*it)->getNode()->getNodeID(), (*it)->getSAV());
    }
 
    fclose(fptr);
@@ -300,7 +299,7 @@ void dfs(char* cp) {
 
    sscanf(cp, "%s %s", readFile, writeFile);
    inputList* testPatterns = readTestPatterns(readFile);
-   faultList rflist = ckt->generateFaults(true);
+   faultSet rflist = ckt->generateFaults(true);
    faultMap* faultSimResults = ckt->deductiveFaultSim(&rflist, testPatterns);
 
    FILE* fptr;
@@ -368,29 +367,29 @@ void atpg_det(char* cp) {
    string algorithm = alg;
    double fc;
    struct timeval begin, end;
-   if (algorithm.compare("PODEM") != 0) {
-      gettimeofday(&begin,0);
-
-   ///dalg
-
-      gettimeofday(&end, 0);
+   inputList testVectors;
+   if (algorithm.compare("PODEM") != 0 && algorithm.compare("podem") != 0) {
+      printf("Starting DAlg...\n");
+      ATPG_DET(cp);
+      printf("Algorithm: Dalg\n");
    } else {
       delete ckt;
       string cf = cktFile;
       ckt = new Circuit(cktFile);
       gettimeofday(&begin,0);
-      fc = ckt->atpg_det();
+      fc = ckt->atpg_det(&testVectors);
       gettimeofday(&end, 0);
+      printf("Algorithm: PODEM\n");
+      printf("Circuit: %s\n", ckt->getCktName().c_str());
+      printf("Fault Coverage: %.2f\%\n", fc);
+
+      long seconds = end.tv_sec - begin.tv_sec;
+      long microseconds = end.tv_usec - begin.tv_usec;
+      double elapsed = seconds + microseconds*1e-6;
+      printf("Finished in %.3f seconds\n", elapsed);
+      podemATPGReport(fc, elapsed, &testVectors);
    }
-
-   printf("Algorithm: %s\n", alg);
-   printf("Circuit: %s\n", ckt->getCktName().c_str());
-   printf("Fault Coverage: %.2f\%\n", fc);
-
-   long seconds = end.tv_sec - begin.tv_sec;
-   long microseconds = end.tv_usec - begin.tv_usec;
-   double elapsed = seconds + microseconds*1e-6;
-   printf("Finished in %.3f seconds\n", elapsed);
+   printf("==> OK\n");
 }
 
 void atpg(char* cp) {
@@ -401,21 +400,25 @@ void atpg(char* cp) {
    string algorithm = alg;
    struct timeval begin, end;
    double fc;
-   if (algorithm.compare("PODEM") != 0) {
+   inputList testVectors;
+   bool Dalg = false;
+   if (Dalg && (strchr(alg,'p') != NULL || strchr(alg, 'P'))) {
+      printf("Starting Dalg based ATPG...\n");
       gettimeofday(&begin,0);
-
    ///dalg
 
       gettimeofday(&end, 0);
    } else {
       delete ckt;
       ckt = new Circuit(cktFile);
+      printf("Starting PODEM based ATPG...\n");
       gettimeofday(&begin,0);
-      fc = ckt->atpg();
+      fc = ckt->atpg(&testVectors);
       gettimeofday(&end, 0);
+      //output test vectors
    }
 
-   printf("Algorithm: %s\n", alg);
+   printf("\nAlgorithm: %s\n", alg);
    printf("Circuit: %s\n", cktFile);
    printf("Fault Coverage: %f\%\n", fc);
 
@@ -423,25 +426,103 @@ void atpg(char* cp) {
    long microseconds = end.tv_usec - begin.tv_usec;
    double elapsed = seconds + microseconds*1e-6;
    printf("Finished in %.3f seconds\n", elapsed);
+   podemATPGReport(fc, elapsed, &testVectors);
+   printf("==> OK\n");
 }
 
 void rtg(char* cp) {
+   char reportFile[MAXLINE];
+   int nTests;
+   double fc;
 
-   
+   sscanf(cp, "%d %f %s", &nTests, &fc, reportFile);
+
+   FILE *fptrOut;
+   fptrOut = fopen(reportFile, "w");
+	if(fptrOut == NULL) {
+		printf("File %s cannot be written!\n", reportFile);
+		return;
+	}else{
+		printf("==> Writing file of PO outputs: %s\n",reportFile);
+	}
+   inputList randInputs = ckt->randomTestsGen(nTests);
+
+   for (int i = 0; i < randInputs.size(); i++) {
+      ckt->reset();
+      ckt->simulate(randInputs[i]);
+   }
+
+   fprintf(fptrOut, "Test Vector\t\tPOs:\t");
+   cktList POs = ckt->getPONodeList();
+   for (int i = 0; i < POs.size() - 1; i++) {
+         fprintf(fptrOut, "%d\t", (*POs[i]).getNodeID());
+   }
+   fprintf(fptrOut, "%d\n", POs.back()->getNodeID());
+
+   for (int i = 0; i < randInputs.size(); i++) {
+      ckt->simulate(randInputs[i]);
+      stringstream ss;
+      ss << randInputs[i];
+      fprintf(fptrOut, "%s\t", ss.str().c_str());
+      for (int j = 0; j < POs.size() - 1; j++) {
+         fprintf(fptrOut, "%d\t", (*POs[j]).getValue());
+      }
+      fprintf(fptrOut, "%d\n", POs.back()->getValue());
+   }
+   fclose(fptrOut);
+	printf("\n==> OK\n");
+
 }
-void pfs(char* cp) {
-
-
-}
+void pfs(char* cp) {}
 void dalg(char* cp) {
+   DALG(cp);
+}
 
+void podemATPGReport(double fc, double elapsedTime, inputList* testVectors) {
+   FILE* fptr;
+   FILE* pFile;
+   char fileName[MAXLINE];
+   char patternFile[MAXLINE];
+   sprintf(fileName, "ATPG_OUT/%s_PODEM_ATPG_report.txt", ckt->getCktName().c_str());
+   sprintf(patternFile, "ATPG_OUT/%s_PODEM_ATPG_patterns.txt", ckt->getCktName().c_str());
+   fptr = fopen(fileName, "w");
+   pFile = fopen(patternFile, "w");
 
+   if(fptr == NULL) {
+      printf("File %s cannot be written.\n", fileName);
+      return;
+   }
+
+   if(pFile == NULL) {
+      printf("File %s cannot be written.\n", patternFile);
+      return;
+   }
+
+   for (inputMap::iterator it = testVectors->at(0)->begin();
+         it != testVectors->at(0)->end(); ++it) {
+      fprintf(pFile, "%d ", it->first);
+   }
+   fprintf(pFile, "\n");
+   int temp;
+   for (int i = 1; i < testVectors->size(); i++) {
+      for(inputMap::iterator it = testVectors->at(i)->begin(); 
+                  it != testVectors->at(i)->end(); ++it){
+         stringstream ss;
+         ss << (LOGIC)it->second;
+         fprintf(pFile, "%s ", ss.str().c_str());
+      }
+      fprintf(pFile, "\n");
+   }
+
+   fprintf(fptr, "\nAlgorithm: PODEM\n");
+   fprintf(fptr, "Circuit: %s\n", ckt->getCktName().c_str());
+   fprintf(fptr, "Fault Coverage: %f\%\n", fc);
+   fprintf(fptr, "Time: %0.3f\n", elapsedTime);
+   printf("\n==> Writing ATPG report: %s\n",fileName);
+   fclose(fptr);
+   fclose(pFile);
 }
 
 void exit(char*) {
    Done = 1;
-}
-
-void simulate(char* cp) {
-
 }

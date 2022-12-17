@@ -73,7 +73,6 @@ inline ostream &operator<<(ostream &str, inputMap* ins) {
     for (inputMap::iterator it = ins->begin(); it != ins->end(); ++it) {
         str << it->first << "=" << it->second << ", ";
     }
-    str << "\b\b";
     str << ">";
 
     return str;

@@ -10,7 +10,6 @@ Circuit::Circuit(char* file) {
         cout << "File: " << file << " does not exist.\n";
     }
 
-    string filename = file;
     vector<cktNode*> nodeList;
     int nodeID;
     int lineNum;
@@ -70,17 +69,24 @@ Circuit::Circuit(char* file) {
 
             lineNum++;
         }
-
-        cktName = filename;
         linkNodes();
         verifyLink(); //assert
         levelize();
     }
 
+    char* fileName = strdup(file);
+    char *strPtr = strchr(fileName,'/');
+    while (strPtr != NULL) {
+        strcpy(fileName, strPtr+1);
+        strPtr = strchr(fileName,'/');
+    }
+    strPtr = strchr(fileName, '.');
+    *strPtr = '\0';
+    
+    this->cktName = fileName;
     this->numNodes = lineNum ;
     this->maxLevel = 0;
     this->initialized = false;
-    this->cktName = filename;
     assert(this->numNodes == this->nodes.size());
 }
 
@@ -111,8 +117,6 @@ void Circuit::linkNodes(){
 void Circuit::verifyLink() {
     for(cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
         cktNode *checkNode = it->second;
-
-        placeholder();
 
         if (checkNode->getUpstreamList().size() != checkNode->getNumFanIns()) {
             cout << checkNode->getNodeID() << " failed usptream \n";        
@@ -242,30 +246,30 @@ void Circuit::reset() {
 }
 
 
-faultList Circuit::rflCheckpoint() {
-    faultList reducedFaultList;
+faultSet Circuit::rflCheckpoint() {
+    faultSet reducedFaultList;
 
     for (int i = 0; i < PInodes.size(); i++) {
-        reducedFaultList.push_back(new Fault(PInodes[i], 0));
-        reducedFaultList.push_back(new Fault(PInodes[i], 1));
+        reducedFaultList.insert(new Fault(PInodes[i], 0));
+        reducedFaultList.insert(new Fault(PInodes[i], 1));
     }
 
     for (int i = 0; i < FBnodes.size(); i++) {
-        reducedFaultList.push_back(new Fault(FBnodes[i], 0));
-        reducedFaultList.push_back(new Fault(FBnodes[i], 1));
+        reducedFaultList.insert(new Fault(FBnodes[i], 0));
+        reducedFaultList.insert(new Fault(FBnodes[i], 1));
     }
 
     return reducedFaultList;
 }
 
 
-faultList Circuit::generateFaults(bool reduced) {
+faultSet Circuit::generateFaults(bool reduced) {
     if (reduced) { return rflCheckpoint();}
 
-    faultList faults;
+    faultSet faults;
     for (cktMap::iterator it = nodes.begin(); it != nodes.end(); ++it) {
-        faults.push_back(new Fault(it->second, 0));
-        faults.push_back(new Fault(it->second, 1));
+        faults.insert(new Fault(it->second, 0));
+        faults.insert(new Fault(it->second, 1));
     }
     return faults;
 }
@@ -288,7 +292,7 @@ Fault* Circuit::createFault(int nodeID, int sav) {
 }
 
 
-double Circuit::faultCoverage(faultList* detectedFaults) {
+double Circuit::faultCoverage(faultSet* detectedFaults) {
     double totalFaults = generateFaults(true).size();
     return detectedFaults->size() / totalFaults;
 }
@@ -317,40 +321,33 @@ inputList Circuit::randomTestsGen(int numTest) {
 }
 
 
-faultMap* Circuit::deductiveFaultSim(faultList* fl, inputList* ins) {
+faultMap* Circuit::deductiveFaultSim(faultSet* fl, inputList* ins) {
     faultMap* detectedFaults = new faultMap();
     bool faultDetected;
 
     Fault* currFault;
     inputMap* currInput;
 
-    for (int i = 0; i < fl->size(); i++) {
-        faultDetected = false;
-        this->reset();
-        currFault = fl->at(i);
-        this->addFault(currFault);
-
-        for (int j = 0; j < ins->size() && !faultDetected; j++) {
-            resetPO();
-            currInput = ins->at(j);
+    for (inputList::iterator it = ins->begin(); it != ins->end(); ++it) {
+        for (faultSet::iterator itt = fl->begin(); itt != fl->end();) {
+            this->reset();
+            currFault = *itt;
+            this->addFault(currFault);
+            currInput = *it;
             this->simulate(currInput);
 
-            if (faultAtPO()) {
-                if (!(detectedFaults->count(currInput))) {
+            if(faultAtPO()) {
+                if (!detectedFaults->count(currInput)) {
                     detectedFaults->insert(pair<inputMap*,faultList*>(currInput, new faultList()));
                 }
                 detectedFaults->at(currInput)->push_back(currFault);
-                faultDetected = true;
-                //cout << "Fault " << currFault << " detected by " << currInput << "\n";
+                fl->erase(itt++);
+            } else {
+                ++itt;
             }
         }
-
-        /*
-        if (!faultDetected) {
-             cout << "fault " << currFault << " not detected\n";
-        }*/
     }
-
+    
     return detectedFaults;
 }
 
@@ -443,7 +440,6 @@ bool Circuit::faultAtPO() {
     return false;
 }
 
-
 bool Circuit::xPathCheck(cktList* dFrontier) {
     cktQ dFQ;
     for (int i = 0; i < dFrontier->size(); i++) {
@@ -482,7 +478,6 @@ void Circuit::placeholder() {
     int x = 10;
 }
 
-
 inputMap* Circuit::PODEM(Fault* fault) {
     this->reset();
     this->addFault(fault);
@@ -518,16 +513,14 @@ inputMap* Circuit::PODEM(Fault* fault) {
         }
         return testVector;
     } else {
-        cout << "PODEM Failed : " << fault << "\n\n";
+        cout << "PODEM Failed : " << fault << "\n";
         return NULL;
     }
 }
 
-
 int pf(Fault* fault) {
     return fault->getNode()->getNodeID();
 }
-
 
 bool Circuit::podem(Fault* fault, cktList* dFrontier) {
     if (faultAtPO()) {
@@ -543,6 +536,10 @@ bool Circuit::podem(Fault* fault, cktList* dFrontier) {
     OBJECTIVE obj = objective(dFrontier);
     if (obj.node == NULL || obj.targetValue == X) {return false;}
     OBJECTIVE piBacktrace = backtrace(obj);
+    
+    if (piBacktrace.node == NULL) {
+
+    }
 
     cktQ toEvaluate;
     cktQ notEvaluated;
@@ -565,7 +562,7 @@ bool Circuit::podem(Fault* fault, cktList* dFrontier) {
     }
     this->simulate(&toEvaluate, &notEvaluated, 1, dFrontier);
     bool podemOut = podem(fault, dFrontier);
-    piBacktrace.node->setValue(X);
+    //piBacktrace.node->setValue(X);
     piBacktrace.node->tested = true;
 
     if (podemOut) {
@@ -578,34 +575,54 @@ cktNode Circuit::getNode(int nodeID)
     {return *nodes[nodeID];}
 
 
-double Circuit::atpg() {
-    int numRandom = PInodes.size() * 4;
+double Circuit::atpg(inputList* testVectors) {
+    faultSet reducedFaults = generateFaults(true);
+    faultSet detectedFaults;
 
-    cout << "Generating random faults...\n";
-    faultList reducedFaults = generateFaults(true);
-    inputList randomInputs = randomTestsGen(numRandom);
+    int numRandom = 0;
+    double fcPrev = 0;
+    double fc = 0;
+    while ((fc == 0 || (fc - fcPrev > 0.01)) && numRandom < MAXRANDOM) {
+        inputList randomInputs = randomTestsGen(1);
+        faultMap* randomFD = deductiveFaultSim(&reducedFaults, &randomInputs);
 
-    faultMap * randomFD = deductiveFaultSim(&reducedFaults, &randomInputs);
-    inputMap * firstInput = randomInputs[0];
+        if (!randomFD->empty()) {
+            for (faultList::iterator it = randomFD->at(randomInputs[0])->begin();
+                    it != randomFD->at(randomInputs[0])->end(); ++it) {
+                detectedFaults.insert(*it);
+                reducedFaults.erase(*it);
+            }
+        }
 
-    faultList * randomF = new faultList();
-
-    for (faultMap::iterator it = randomFD->begin(); it != randomFD->end(); ++it) {
-        randomF->insert(randomF->end(), randomFD->at(it->first)->begin(), randomFD->at(it->first)->end());
+        faultList uniqueFaults;
+        for (set<Fault*>::iterator it = detectedFaults.begin(); it != detectedFaults.end(); ++it) {
+            uniqueFaults.push_back(*it);
+        }
+        testVectors->push_back(randomInputs[0]);
+        fcPrev = fc;
+        fc = faultCoverage(&detectedFaults);
     }
 
-    return faultCoverage(randomF);
+    printf("Stopping random inputs at FC=%.3f and prevFC=%.3F\n", fc, fcPrev);
+
+    for (faultSet::iterator it = reducedFaults.begin(); it != reducedFaults.end(); ++it) {
+        inputMap* newTV = this->PODEM(*it);
+        if (newTV != NULL) {
+            testVectors->push_back(newTV);
+            detectedFaults.insert(*it);
+        }
+    }
+    return faultCoverage(&detectedFaults);
 }
 
-double Circuit::atpg_det() {
-    faultList faults = this->generateFaults(true);
-    inputList testVectors;
-    faultList detectedFaults;
-    for (int i = 0; i < faults.size(); i++) {
-      inputMap* tv = this->PODEM(faults[i]);
+double Circuit::atpg_det(inputList * testVectors) {
+    faultSet faults = this->generateFaults(true);
+    faultSet detectedFaults;
+    for (faultSet::iterator it = faults.begin(); it != faults.end(); ++it) {
+      inputMap* tv = this->PODEM(*it);
       if (tv != NULL) {
-         testVectors.push_back(tv);
-         detectedFaults.push_back(faults[i]);
+         testVectors->push_back(tv);
+         detectedFaults.insert(*it);
       }
    }
    return faultCoverage(&detectedFaults);
